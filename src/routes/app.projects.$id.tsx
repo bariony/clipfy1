@@ -377,15 +377,13 @@ function ProjectEditor() {
               )}
             </div>
           </Meta>
-          <Meta label="Language">
-            <span className="text-sm">{project.language ?? "auto"}</span>
-          </Meta>
-          <Meta label="Target clips">
-            <span className="font-mono text-sm">{project.target_clip_count}</span>
-          </Meta>
-          <Meta label="Clip duration">
-            <span className="font-mono text-sm">
-              {project.min_clip_seconds}s – {project.max_clip_seconds}s
+          <Meta label="Next step">
+            <span className="text-sm">
+              {!project.storage_path
+                ? "Upload the video"
+                : project.status === "draft" || project.status === "failed"
+                  ? "Transcribe the video"
+                  : "Processing"}
             </span>
           </Meta>
           <Meta label="Video duration">
@@ -450,9 +448,9 @@ function VideoUploadPanel({
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold">Project video</h2>
+          <h2 className="text-sm font-bold">Vídeo do projeto</h2>
           <p className="text-xs text-muted-foreground">
-            {hasVideo ? "A video is attached. Replace it if needed." : "Attach the source video after creating the project."}
+            {hasVideo ? "Vídeo anexado. Você pode trocar se precisar." : "Selecione o vídeo para avançar."}
           </p>
         </div>
         {hasVideo && (
@@ -471,12 +469,12 @@ function VideoUploadPanel({
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">{file.name}</div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                {formatBytes(file.size)}{uploading ? ` · uploading ${progress}%` : " · ready"}
+                {formatBytes(file.size)}{uploading ? ` · enviando ${progress}%` : " · pronto"}
               </div>
             </div>
             {uploading ? (
               <Button type="button" variant="outline" size="sm" onClick={onCancel} className="border-border bg-transparent">
-                Cancel
+                Cancelar
               </Button>
             ) : (
               <Button type="button" variant="ghost" size="icon" onClick={onClear} aria-label="Remove file">
@@ -488,7 +486,7 @@ function VideoUploadPanel({
           {!uploading && (
             <Button type="button" onClick={onUpload} className="mt-4 rounded-lg font-bold">
               <Upload className="mr-2 size-4" />
-              Upload video
+              Enviar vídeo
             </Button>
           )}
         </div>
@@ -518,7 +516,7 @@ function VideoUploadPanel({
             onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           />
           <Upload className="mb-3 size-6 text-muted-foreground" />
-          <div className="text-sm font-semibold">Drop your video here or click to browse</div>
+          <div className="text-sm font-semibold">Solte o vídeo aqui ou clique para escolher</div>
           <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             MP4 · MOV · WEBM · MKV — up to 500MB
           </div>

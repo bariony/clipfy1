@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { FolderKanban, Plus } from "lucide-react";
+import { ArrowRight, CheckCircle2, FolderKanban, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -57,17 +57,39 @@ function Projects() {
                   </div>
                 </div>
                 <div className="absolute right-3 top-3">
-                  <StatusPill status={p.status as ProjectStatus} />
+                  {p.storage_path && p.status === "draft" ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400">
+                      <span className="size-1.5 rounded-full bg-current" />
+                      video ready
+                    </span>
+                  ) : (
+                    <StatusPill status={p.status as ProjectStatus} />
+                  )}
                 </div>
-                <div className="absolute bottom-3 right-3 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white/90 backdrop-blur">
+                <div className="absolute bottom-3 right-3 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-foreground backdrop-blur">
                   {formatDuration(p.duration_seconds)}
                 </div>
               </div>
               <div className="flex flex-1 flex-col p-4">
                 <h3 className="mb-2 truncate text-sm font-bold">{p.title}</h3>
+                <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+                  {p.storage_path ? (
+                    <>
+                      <CheckCircle2 className="size-4 text-primary" />
+                      <span>Pronto para transcrever</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-4 text-primary" />
+                      <span>Falta enviar o vídeo</span>
+                    </>
+                  )}
+                </div>
                 <div className="mt-auto flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <span>{p.target_clip_count ?? 0} target clips</span>
                   <span>{timeAgo(p.created_at)}</span>
+                  <span className="inline-flex items-center gap-1 text-primary">
+                    Continuar <ArrowRight className="size-3" />
+                  </span>
                 </div>
               </div>
             </Link>
@@ -86,7 +108,7 @@ function EmptyState() {
       </div>
       <h3 className="mb-2 text-lg font-bold">No projects yet</h3>
       <p className="mb-6 max-w-sm text-sm text-muted-foreground">
-        Kick off your first project by pasting a YouTube link.
+        Envie um vídeo e o Clipfy abre o editor automaticamente.
       </p>
       <Button asChild className="rounded-xl font-bold">
         <Link to="/app/new">

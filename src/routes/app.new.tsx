@@ -42,35 +42,121 @@ const LANGUAGES = [
 function NewProject() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const [source, setSource] = useState<"upload" | "youtube">("upload");
   const [name, setName] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
   const [language, setLanguage] = useState("auto");
   const [clipCount, setClipCount] = useState<number[]>([10]);
   const [minSec, setMinSec] = useState<number[]>([20]);
   const [maxSec, setMaxSec] = useState<number[]>([60]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   const { data: profile } = useQuery(profileQueryOptions());
   const estimatedCost = clipCount[0] * 5;
   const balance = profile?.credits ?? 0;
   const insufficient = balance < estimatedCost;
 
+  function pickFile(f: File | null) {
+    if (!f) return;
+    if (!f.type.startsWith("video/")) {
+      toast.error("Please choose a video file (mp4, mov, webm, mkv).");
+      return;
+    }
+    if (f.size > MAX_FILE_SIZE) {
+      toast.error("File too large", { description: "Max 500MB for now." });
+      return;
+    }
+    setFile(f);
+    if (!name.trim()) setName(f.name.replace(/\.[^.]+$/, ""));
+  }
+
+  async function uploadWithProgress(f: File): Promise<string> {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    const userId = sess.session?.user.id;
+    if (!token || !userId) throw new Error("Not authenticated");
+
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+    const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const ext = f.name.split(".").pop()?.toLowerCase() || "mp4";
+    const safeExt = ext.replace(/[^a-z0-9]/g, "").slice(0, 8) || "mp4";
+    const path = `${userId}/${crypto.randomUUID()}.${safeExt}`;
+    const url = `${SUPABASE_URL}/storage/v1/object/videos/${path}`;
+
+    return new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhrRef.current = xhr;
+      xhr.open("POST", url, true);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("apikey", SUPABASE_KEY);
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.setRequestHeader("cache-control", "3600");
+      if (f.type) xhr.setRequestHeader("content-type", f.type);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+      xhr.onload = () => {
+        xhrRef.current = null;
+        if (xhr.status >= 200 && xhr.status < 300) resolve(path);
+        else {
+          let msg = `Upload failed (${xhr.status})`;
+          try {
+            const parsed = JSON.parse(xhr.responseText);
+            if (parsed?.message) msg = parsed.message;
+          } catch {
+            /* noop */
+          }
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = () => {
+        xhrRef.current = null;
+        reject(new Error("Network error during upload"));
+      };
+      xhr.onabort = () => {
+        xhrRef.current = null;
+        reject(new Error("Upload cancelled"));
+      };
+      xhr.send(f);
+    });
+  }
+
   const createProject = useMutation({
     mutationFn: async () => {
+      let storagePath = "";
+      if (source === "upload" && file) {
+        setUploading(true);
+        setUploadProgress(0);
+        try {
+          storagePath = await uploadWithProgress(file);
+        } finally {
+          setUploading(false);
+        }
+      }
       const { data, error } = await supabase.rpc("create_project_with_credits", {
         _title: name.trim(),
         _description: description.trim(),
         _source: source,
         _source_url: source === "youtube" ? youtubeUrl.trim() : "",
-        _storage_path: "",
+        _storage_path: storagePath,
         _language: language,
         _target_clip_count: clipCount[0],
         _min_clip_seconds: minSec[0],
         _max_clip_seconds: maxSec[0],
         _estimated_cost: estimatedCost,
       });
-      if (error) throw error;
+      if (error) {
+        // If RPC fails after upload, try to clean up the file
+        if (storagePath) await supabase.storage.from("videos").remove([storagePath]).catch(() => {});
+        throw error;
+      }
       return data;
     },
     onSuccess: (project) => {
@@ -90,16 +176,26 @@ function NewProject() {
         toast.error("Insufficient credits", {
           description: `You need ${estimatedCost} credits (you have ${balance}).`,
         });
+      } else if (msg === "Upload cancelled") {
+        toast.info("Upload cancelled");
       } else {
         toast.error("Could not create project", { description: msg });
       }
     },
   });
 
+  function cancelUpload() {
+    xhrRef.current?.abort();
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
       toast.error("Give the project a name first.");
+      return;
+    }
+    if (source === "upload" && !file) {
+      toast.error("Choose a video file to upload.");
       return;
     }
     if (source === "youtube" && !youtubeUrl.trim()) {
@@ -118,6 +214,7 @@ function NewProject() {
     }
     createProject.mutate();
   }
+
 
   return (
     <div className="px-6 py-8">

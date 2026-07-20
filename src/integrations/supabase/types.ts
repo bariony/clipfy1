@@ -243,6 +243,7 @@ export type Database = {
           language: string | null
           max_clip_seconds: number | null
           min_clip_seconds: number | null
+          preferences: Json
           source: Database["public"]["Enums"]["project_source"]
           source_url: string | null
           status: Database["public"]["Enums"]["project_status"]
@@ -263,6 +264,7 @@ export type Database = {
           language?: string | null
           max_clip_seconds?: number | null
           min_clip_seconds?: number | null
+          preferences?: Json
           source?: Database["public"]["Enums"]["project_source"]
           source_url?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -283,6 +285,7 @@ export type Database = {
           language?: string | null
           max_clip_seconds?: number | null
           min_clip_seconds?: number | null
+          preferences?: Json
           source?: Database["public"]["Enums"]["project_source"]
           source_url?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -388,6 +391,7 @@ export type Database = {
           language: string | null
           max_clip_seconds: number | null
           min_clip_seconds: number | null
+          preferences: Json
           source: Database["public"]["Enums"]["project_source"]
           source_url: string | null
           status: Database["public"]["Enums"]["project_status"]

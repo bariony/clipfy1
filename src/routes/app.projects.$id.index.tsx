@@ -31,6 +31,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
+import { PreferencesStage, type ProjectPreferences } from "@/components/preferences-stage";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";
@@ -294,6 +295,19 @@ function ProjectEditor() {
             saving={saveBrief.isPending}
             onSave={(description) => saveBrief.mutate(description)}
           />
+
+          {(hasUpload || hasYoutube) && (
+            <PreferencesStage
+              projectId={project.id}
+              storagePath={project.storage_path}
+              youtubeUrl={project.source === "youtube" ? project.source_url : null}
+              initialPreferences={(project.preferences ?? {}) as ProjectPreferences}
+              onSaved={() => {
+                invalidateProject();
+                toast.success("Preferências salvas");
+              }}
+            />
+          )}
 
           {canProcessUpload && (
             <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">

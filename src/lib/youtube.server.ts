@@ -113,27 +113,54 @@ export async function fetchYoutubeTranscript(sourceUrl: string): Promise<Youtube
   }
 
   const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+
+  // Path A: we got track metadata from YouTube — try to download json3 directly.
+  if (tracks.length > 0) {
+    const preferredTrack = chooseCaptionTrack(tracks);
+    if (preferredTrack?.baseUrl) {
+      try {
+        const captionUrl = withQueryParam(preferredTrack.baseUrl, "fmt", "json3");
+        const captions = await fetchWithRetry(captionUrl, { headers: BROWSER_HEADERS });
+        if (captions.ok) {
+          const payload = (await captions.json()) as { events?: Json3Event[] };
+          const segments = eventsToSegments(payload.events ?? []);
+          const text = segments.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
+          if (text) {
+            const duration = Number(player.videoDetails?.lengthSeconds || 0);
+            return {
+              text,
+              language: preferredTrack.languageCode ?? null,
+              duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null,
+              segments,
+            };
+          }
+        }
+      } catch {
+        // fall through to third-party fallback
+      }
+    }
+  }
+
+  // Path B: fallback to a public transcript proxy (works when the Worker IP is 429'd by YouTube).
+  const fallback = await fetchTranscriptViaProxy(videoId).catch(() => null);
+  if (fallback && fallback.text) {
+    const duration = Number(player.videoDetails?.lengthSeconds || 0);
+    return {
+      ...fallback,
+      duration: fallback.duration ?? (Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null),
+    };
+  }
+
   if (tracks.length === 0) {
     throw new Error(
       "Esse vídeo não tem legendas públicas disponíveis. Envie o arquivo do vídeo para transcrever direto.",
     );
   }
+  throw new Error(YT_UPLOAD_HINT);
+}
 
-  const preferredTrack = chooseCaptionTrack(tracks);
-  if (!preferredTrack?.baseUrl) throw new Error("Não encontrei uma faixa de legenda utilizável para esse vídeo.");
-
-  const captionUrl = withQueryParam(preferredTrack.baseUrl, "fmt", "json3");
-  const captions = await fetchWithRetry(captionUrl, { headers: BROWSER_HEADERS }).catch((err: Error & { status?: number }) => {
-    if (err.status === 429) throw new Error(YT_UPLOAD_HINT);
-    throw new Error(`Não consegui baixar as legendas do YouTube (${err.status ?? "erro"}).`);
-  });
-  if (!captions.ok) {
-    if (captions.status === 429) throw new Error(YT_UPLOAD_HINT);
-    throw new Error(`Não consegui baixar as legendas do YouTube (${captions.status}).`);
-  }
-
-  const payload = (await captions.json()) as { events?: Json3Event[] };
-  const segments = (payload.events ?? [])
+function eventsToSegments(events: Json3Event[]): TranscriptSegment[] {
+  return events
     .map((event) => {
       const text = (event.segs ?? [])
         .map((segment) => segment.utf8 ?? "")
@@ -145,17 +172,41 @@ export async function fetchYoutubeTranscript(sourceUrl: string): Promise<Youtube
       return { text, start, end };
     })
     .filter((segment) => segment.text.length > 0);
+}
 
-  const text = segments.map((segment) => segment.text).join(" ").replace(/\s+/g, " ").trim();
-  if (!text) throw new Error("As legendas do YouTube vieram vazias.");
+async function fetchTranscriptViaProxy(videoId: string): Promise<YoutubeTranscriptResult | null> {
+  // Public transcript proxy. Returns XML like: <transcript><text start="0" dur="2.5">...</text>...</transcript>
+  const res = await fetchWithRetry(
+    `https://youtubetranscript.com/?server_vid2=${encodeURIComponent(videoId)}`,
+    { headers: BROWSER_HEADERS },
+    2,
+  ).catch(() => null);
+  if (!res || !res.ok) return null;
+  const xml = await res.text();
+  if (!xml || xml.includes("<error>") || !xml.includes("<text")) return null;
 
-  const duration = Number(player.videoDetails?.lengthSeconds || 0);
-  return {
-    text,
-    language: preferredTrack.languageCode ?? null,
-    duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null,
-    segments,
-  };
+  const segments: TranscriptSegment[] = [];
+  const regex = /<text[^>]*start="([\d.]+)"[^>]*(?:dur="([\d.]+)")?[^>]*>([\s\S]*?)<\/text>/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(xml)) !== null) {
+    const start = Number(match[1]) || 0;
+    const dur = Number(match[2]) || 2.5;
+    const text = decodeXmlEntities(match[3]).replace(/\s+/g, " ").trim();
+    if (text) segments.push({ start, end: start + dur, text });
+  }
+  const text = segments.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  return { text, language: null, duration: null, segments };
+}
+
+function decodeXmlEntities(input: string) {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
 }
 
 function extractYoutubeVideoId(value: string) {

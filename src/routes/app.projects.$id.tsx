@@ -2,7 +2,7 @@ import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-ro
 import { useSuspenseQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
-import { ArrowLeft, Clapperboard, FileVideo, Sparkles, Trash2, Upload, Wand2, X, Youtube } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clapperboard, FileVideo, Sparkles, Trash2, Upload, Wand2, X, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -210,7 +210,7 @@ function ProjectEditor() {
   const canTranscribe =
     project?.source === "upload" &&
     !!project?.storage_path &&
-    ["draft", "uploading", "failed"].includes(project?.status ?? "");
+    ["draft", "failed"].includes(project?.status ?? "");
   const isUploading = uploadVideo.isPending || project?.status === "uploading";
   const isBusy = transcribe.isPending || project?.status === "transcribing";
 
@@ -231,7 +231,14 @@ function ProjectEditor() {
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-primary">
             <span>// Project</span>
-            <StatusPill status={project.status as ProjectStatus} />
+            {project.storage_path && project.status === "draft" ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-400">
+                <span className="size-1.5 rounded-full bg-current" />
+                Video ready
+              </span>
+            ) : (
+              <StatusPill status={project.status as ProjectStatus} />
+            )}
           </div>
           <h1 className="truncate text-3xl font-extrabold tracking-tight">{project.title}</h1>
           {project.description && (
@@ -241,16 +248,6 @@ function ProjectEditor() {
           )}
         </div>
         <div className="flex shrink-0 gap-2">
-          {canTranscribe && (
-            <Button
-              className="rounded-lg font-bold"
-              onClick={() => transcribe.mutate()}
-              disabled={isBusy}
-            >
-              <Sparkles className="mr-2 size-4" />
-              {isBusy ? "Transcribing…" : "Transcribe"}
-            </Button>
-          )}
           <Button
             variant="outline"
             className="border-border bg-transparent"
@@ -275,11 +272,31 @@ function ProjectEditor() {
               <div className="text-center">
                 <Clapperboard className="mx-auto mb-3 size-8 text-muted-foreground" />
                 <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  {project.storage_path ? "Player unlocks after transcoding" : "Upload a video to start processing"}
+                  {project.storage_path ? "Video uploaded · ready to transcribe" : "Upload a video to start processing"}
                 </div>
               </div>
             </div>
           </div>
+
+          {canTranscribe && (
+            <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+                    <CheckCircle2 className="size-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold">Vídeo enviado</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Clique em transcrever para gerar a base dos cortes.</p>
+                  </div>
+                </div>
+                <Button size="lg" className="rounded-xl font-extrabold" onClick={() => transcribe.mutate()} disabled={isBusy}>
+                  <Sparkles className="mr-2 size-4" />
+                  {isBusy ? "Transcrevendo…" : "Transcrever vídeo"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {project.source === "upload" && (
             <VideoUploadPanel
@@ -360,15 +377,13 @@ function ProjectEditor() {
               )}
             </div>
           </Meta>
-          <Meta label="Language">
-            <span className="text-sm">{project.language ?? "auto"}</span>
-          </Meta>
-          <Meta label="Target clips">
-            <span className="font-mono text-sm">{project.target_clip_count}</span>
-          </Meta>
-          <Meta label="Clip duration">
-            <span className="font-mono text-sm">
-              {project.min_clip_seconds}s – {project.max_clip_seconds}s
+          <Meta label="Next step">
+            <span className="text-sm">
+              {!project.storage_path
+                ? "Upload the video"
+                : project.status === "draft" || project.status === "failed"
+                  ? "Transcribe the video"
+                  : "Processing"}
             </span>
           </Meta>
           <Meta label="Video duration">
@@ -433,9 +448,9 @@ function VideoUploadPanel({
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold">Project video</h2>
+          <h2 className="text-sm font-bold">Vídeo do projeto</h2>
           <p className="text-xs text-muted-foreground">
-            {hasVideo ? "A video is attached. Replace it if needed." : "Attach the source video after creating the project."}
+            {hasVideo ? "Vídeo anexado. Você pode trocar se precisar." : "Selecione o vídeo para avançar."}
           </p>
         </div>
         {hasVideo && (
@@ -454,12 +469,12 @@ function VideoUploadPanel({
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">{file.name}</div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                {formatBytes(file.size)}{uploading ? ` · uploading ${progress}%` : " · ready"}
+                {formatBytes(file.size)}{uploading ? ` · enviando ${progress}%` : " · pronto"}
               </div>
             </div>
             {uploading ? (
               <Button type="button" variant="outline" size="sm" onClick={onCancel} className="border-border bg-transparent">
-                Cancel
+                Cancelar
               </Button>
             ) : (
               <Button type="button" variant="ghost" size="icon" onClick={onClear} aria-label="Remove file">
@@ -471,7 +486,7 @@ function VideoUploadPanel({
           {!uploading && (
             <Button type="button" onClick={onUpload} className="mt-4 rounded-lg font-bold">
               <Upload className="mr-2 size-4" />
-              Upload video
+              Enviar vídeo
             </Button>
           )}
         </div>
@@ -501,7 +516,7 @@ function VideoUploadPanel({
             onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           />
           <Upload className="mb-3 size-6 text-muted-foreground" />
-          <div className="text-sm font-semibold">Drop your video here or click to browse</div>
+          <div className="text-sm font-semibold">Solte o vídeo aqui ou clique para escolher</div>
           <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             MP4 · MOV · WEBM · MKV — up to 500MB
           </div>

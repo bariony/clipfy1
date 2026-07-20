@@ -1,9 +1,11 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
+  Download,
   Loader2,
   Pause,
   Play,
@@ -11,6 +13,7 @@ import {
   Scissors,
   Sparkles,
   Type,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,12 +22,13 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { enqueueClipRender } from "@/lib/render.functions";
 import {
   clipQueryOptions,
   formatDuration,
+  latestRenderJobQueryOptions,
   projectQueryOptions,
   transcriptQueryOptions,
-  type Clip,
   type TranscriptSegment,
 } from "@/lib/projects";
 

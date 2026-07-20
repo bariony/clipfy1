@@ -193,7 +193,7 @@ function ClipEditor() {
 
   const [trim, setTrim] = useState<[number, number]>([originalStart, originalEnd]);
   const [templateSlug, setTemplateSlug] = useState<string>(
-    (clip.metadata as { template_slug?: string } | null)?.template_slug ?? "bold-yellow",
+    (clip.metadata as { template_slug?: string } | null)?.template_slug ?? "hormozi-slam",
   );
   const [title, setTitle] = useState(clip.title);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);

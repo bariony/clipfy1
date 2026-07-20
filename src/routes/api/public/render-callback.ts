@@ -43,20 +43,23 @@ export const Route = createFileRoute("/api/public/render-callback")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        const update: Record<string, unknown> = {
+        const update: {
+          status: typeof parsed.status;
+          worker_id?: string;
+          error_message?: string | null;
+          progress?: number;
+          started_at?: string;
+          completed_at?: string;
+          output_url?: string;
+          thumbnail_url?: string;
+        } = {
           status: parsed.status,
-          worker_id: parsed.worker_id ?? undefined,
           error_message: parsed.error_message ?? null,
         };
+        if (parsed.worker_id) update.worker_id = parsed.worker_id;
         if (parsed.progress != null) update.progress = parsed.progress;
         if (parsed.status === "processing") update.started_at = new Date().toISOString();
-        if (
-          parsed.status === "completed" ||
-          parsed.status === "failed" ||
-          parsed.status === "cancelled"
-        ) {
-          update.completed_at = new Date().toISOString();
-        }
+        if (parsed.status !== "processing") update.completed_at = new Date().toISOString();
         if (parsed.output_url) update.output_url = parsed.output_url;
         if (parsed.thumbnail_url) update.thumbnail_url = parsed.thumbnail_url;
 

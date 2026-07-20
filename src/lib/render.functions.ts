@@ -1,7 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestUrl } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createHmac, randomUUID } from "crypto";
 import { z } from "zod";
 
 const Input = z.object({ clipId: z.string().uuid() });
@@ -53,6 +51,11 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
     if (!workerUrl || !workerSecret) {
       throw new Error("Worker de render não configurado. Verifique RENDER_WORKER_URL e RENDER_WORKER_SECRET.");
     }
+
+    const [{ createHmac, randomUUID }, { getRequestUrl }] = await Promise.all([
+      import("crypto"),
+      import("@tanstack/react-start/server"),
+    ]);
 
     const jobId = randomUUID();
     const outputPath = `${userId}/${project.id}/${clip.id}-${Date.now()}.mp4`;

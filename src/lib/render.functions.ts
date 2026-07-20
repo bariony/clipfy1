@@ -48,12 +48,20 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
 
     const outputPath = `${userId}/${project.id}/${clip.id}-${Date.now()}.mp4`;
 
+    // Signed PUT URL so the worker can upload the final MP4 without service-role key
+    const { data: uploadSigned, error: uploadErr } = await supabase.storage
+      .from("renders")
+      .createSignedUploadUrl(outputPath);
+    if (uploadErr) throw new Error(`upload url: ${uploadErr.message}`);
+
     const edl = {
       version: 1,
       source: { kind: project.source, url: sourceUrl },
       output: {
         bucket: "renders",
         path: outputPath,
+        upload_url: uploadSigned.signedUrl,
+        upload_token: uploadSigned.token,
         aspect_ratio:
           (project.preferences as { aspect_ratio?: string } | null)?.aspect_ratio ?? "9:16",
       },
@@ -97,7 +105,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
             "content-type": "application/json",
             authorization: `Bearer ${workerSecret}`,
           },
-          body: JSON.stringify({ job_id: job.id }),
+          body: JSON.stringify({ job_id: job.id, edl }),
         });
       } catch (err) {
         console.warn("[render] worker notify failed", err);

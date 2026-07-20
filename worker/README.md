@@ -1,94 +1,112 @@
-# Clipfy Render Worker (reference)
+# Clipfy Render Worker — Deploy no EasyPanel (Hostinger VPS)
 
-Serviço externo (GPU) que consome jobs de `render_jobs`, renderiza o clip
-com FFmpeg + legendas animadas (Remotion recomendado) e faz callback
-assinado para o app.
+Worker Node.js que consome jobs de `render_jobs`, transcreve com Groq
+Whisper (se necessário), corta com FFmpeg, queima legendas animadas
+palavra-a-palavra (.ass) e faz upload via URL assinada — **não precisa de
+Service Role Key**.
 
-## Contrato
+## Arquitetura
 
-### 1. Receber job
-
-Duas opções:
-
-**Push (recomendado)** — o app faz `POST {RENDER_WORKER_URL}/jobs` com
-`Authorization: Bearer $RENDER_WORKER_SECRET` e body `{ "job_id": "<uuid>" }`.
-O worker então busca o job via Supabase (service role) usando o job_id.
-
-**Poll (fallback)** — o worker consulta Supabase a cada N segundos:
-
-```sql
-select * from render_jobs where status = 'queued' order by created_at limit 1;
+```
+App (Lovable)  ──POST /jobs (Bearer)──▶  Worker (EasyPanel)
+     ▲                                        │
+     │                                        ├─ yt-dlp / curl (download)
+     │                                        ├─ Groq Whisper (transcrição)
+     │                                        ├─ FFmpeg (cut + crop + burn subs)
+     │                                        └─ PUT signed URL → bucket "renders"
+     │                                        │
+     └──POST /api/public/render-callback ◀────┘   (HMAC-SHA256)
 ```
 
-### 2. Processar
+## Deploy no EasyPanel
 
-O campo `edl` (JSON) contém tudo:
+### 1. Criar App
+No painel EasyPanel:
+1. Abre o **Project** `clipfy` → **+ Service** → **App**
+2. Nome: `render-worker`
+3. **Source** → **Git** (crie um repo com esse folder `worker/`) ou **Dockerfile**
+   inline colando este Dockerfile
+
+### 2. Build
+- **Build Path**: `/` (raiz do repo/pasta com Dockerfile)
+- EasyPanel detecta o Dockerfile automaticamente
+
+### 3. Environment Variables
+Aba **Environment**:
+```
+RENDER_WORKER_SECRET=<mesmo valor que está no app Lovable>
+GROQ_API_KEY=<sua chave gsk_...>
+APP_URL=https://clipfy1.lovable.app
+WORKER_ID=vps-hostinger-01
+CONCURRENCY=1
+PORT=3000
+```
+
+> ⚠️ **RENDER_WORKER_SECRET** precisa ser IDÊNTICO ao do app. Como o Lovable
+> Cloud não revela secrets, use a mesma string aleatória em ambos: no
+> Lovable use `update_secret` pra definir, aqui você cola o mesmo valor.
+
+### 4. Domain / Port
+Aba **Domains**:
+- **Port**: `3000`
+- Sem domínio? Deixa só o IP direto: `http://179.197.231.80:3000` (funciona pra push do app)
+
+Aba **Deploy**: clica **Deploy**. Aguarda ~3-5 min (baixa ffmpeg + yt-dlp).
+
+### 5. Configurar RENDER_WORKER_URL no app
+No Lovable, adiciona o secret `RENDER_WORKER_URL=http://179.197.231.80:3000`
+para o app saber onde enfileirar jobs.
+
+### 6. Testar
+```bash
+curl http://179.197.231.80:3000/health
+# → {"ok":true,"running":0,"queued":0,"worker_id":"vps-hostinger-01"}
+```
+
+## Endpoints
+
+- `GET  /health` — status público (fila, jobs rodando)
+- `POST /jobs` — recebe `{ job_id, edl }`, requer `Authorization: Bearer <secret>`
+
+## EDL esperado
 
 ```json
 {
   "version": 1,
   "source": { "kind": "upload|youtube|url", "url": "https://..." },
-  "output": { "bucket": "renders", "path": "<user>/<project>/<clip>-<ts>.mp4", "aspect_ratio": "9:16" },
+  "output": {
+    "bucket": "renders",
+    "path": "<user>/<project>/<clip>-<ts>.mp4",
+    "upload_url": "https://<supabase>/storage/v1/object/upload/sign/...",
+    "aspect_ratio": "9:16"
+  },
   "clip": { "id": "...", "title": "...", "start": 12.4, "end": 42.1 },
-  "captions": { "template": "hormozi-slam", "language": "pt", "segments": [...] },
-  "layout": "auto|full|split-h|split-v|grid-3|pip",
+  "captions": {
+    "template": "hormozi-slam|neon-pulse|tiktok-chip|minimal-clean",
+    "language": "pt|en|auto",
+    "segments": [{ "words": [{ "word": "olá", "start": 12.5, "end": 12.7 }] }]
+  },
   "caption_position": "top|middle|bottom"
 }
 ```
 
-Pipeline sugerido:
+Se `captions.segments` já vem com timing por palavra, pula o Groq. Caso
+contrário, o worker transcreve o clip com `whisper-large-v3-turbo`.
 
-1. `yt-dlp` ou `curl` para baixar o `source.url`
-2. `ffmpeg` para cortar `[start, end]` e reescalar para `aspect_ratio`
-3. Se `layout=auto`, detectar rostos (mediapipe/insightface) e compor
-   full/split/grid
-4. Renderizar legendas por palavra via Remotion aplicando o `template`
-5. Encodar `libx264 crf 20`, `-movflags +faststart`
-6. Upload no bucket `renders` (service role):
-   `PUT storage/v1/object/renders/<output.path>`
-
-### 3. Callback assinado
+## Callback assinado
 
 `POST https://clipfy1.lovable.app/api/public/render-callback`
 
-Headers:
-- `content-type: application/json`
-- `x-render-signature: <hex(hmac_sha256(RENDER_WORKER_SECRET, body))>`
+Headers: `x-render-signature: <hex(hmac_sha256(RENDER_WORKER_SECRET, body))>`
 
-Body:
-```json
-{
-  "job_id": "<uuid>",
-  "status": "processing|completed|failed",
-  "progress": 42,
-  "output_path": "<user>/<project>/<clip>-<ts>.mp4",
-  "thumbnail_url": "https://...",
-  "worker_id": "gpu-01",
-  "error_message": null
-}
-```
+## Requisitos de VPS
 
-Ao receber `completed`, o app gera uma URL assinada de 7 dias para o
-arquivo em `renders/<output_path>` e marca o clip como `ready`.
+- **KVM 1** (1 vCPU / 4GB): OK para clips < 3min, transcrição via Groq
+- **KVM 2** (2 vCPU / 8GB): recomendado, roda 2 jobs em paralelo (`CONCURRENCY=2`)
+- Disco: ≥ 20 GB (vídeos temporários ficam em `/tmp/clipfy/<job>`)
 
-## Variáveis
+## Logs
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `RENDER_WORKER_SECRET` (mesmo valor que está no app)
-- `APP_URL` (ex.: `https://clipfy1.lovable.app`)
-
-## Deploy sugerido
-
-- Runpod / Modal / Fly.io GPU
-- Container Docker com `ffmpeg`, `node 20`, `yt-dlp`, Remotion CLI
-- Concorrência: 1 job por GPU
-
-## HMAC helper (Node)
-
-```ts
-import { createHmac } from "crypto";
-const sig = createHmac("sha256", process.env.RENDER_WORKER_SECRET!)
-  .update(body)
-  .digest("hex");
-```
+No EasyPanel → aba **Logs** do serviço. Erros de FFmpeg vêm com os últimos
+800 chars do stderr. Se ver `Downloader ffprobe` sumindo: verifique
+`ffmpeg -version` no shell do container.

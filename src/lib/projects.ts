@@ -8,8 +8,30 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type CreditTransaction =
   Database["public"]["Tables"]["credit_transactions"]["Row"];
 export type Transcript = Database["public"]["Tables"]["transcripts"]["Row"];
+export type RenderJob = Database["public"]["Tables"]["render_jobs"]["Row"];
 
 export type TranscriptSegment = { text: string; start: number; end: number };
+
+export const latestRenderJobQueryOptions = (clipId: string) =>
+  queryOptions({
+    queryKey: ["render-job", clipId],
+    queryFn: async (): Promise<RenderJob | null> => {
+      const { data, error } = await supabase
+        .from("render_jobs")
+        .select("*")
+        .eq("clip_id", clipId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: (query) => {
+      const j = query.state.data;
+      if (!j) return false;
+      return j.status === "queued" || j.status === "processing" ? 3000 : false;
+    },
+  });
 
 export function isBlockedYoutubeClip(clip: Pick<Clip, "title" | "hook" | "transcript_excerpt">) {
   const text = `${clip.title ?? ""} ${clip.hook ?? ""} ${clip.transcript_excerpt ?? ""}`;

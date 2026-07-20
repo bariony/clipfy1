@@ -19,6 +19,7 @@ import { Route as AppNewRouteImport } from './routes/app.new'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.index'
 import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
+import { Route as AppProjectsIdClipsClipIdRouteImport } from './routes/app.projects.$id.clips.$clipId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -70,6 +71,12 @@ const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppProjectsRoute,
 } as any)
+const AppProjectsIdClipsClipIdRoute =
+  AppProjectsIdClipsClipIdRouteImport.update({
+    id: '/clips/$clipId',
+    path: '/clips/$clipId',
+    getParentRoute: () => AppProjectsIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -80,8 +87,9 @@ export interface FileRoutesByFullPath {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRoute
+  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
+  '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -90,8 +98,9 @@ export interface FileRoutesByTo {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/new': typeof AppNewRoute
   '/app': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRoute
+  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects': typeof AppProjectsIndexRoute
+  '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,8 +112,9 @@ export interface FileRoutesById {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRoute
+  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
+  '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/projects/$id'
     | '/app/projects/'
+    | '/app/projects/$id/clips/$clipId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/projects/$id'
     | '/app/projects'
+    | '/app/projects/$id/clips/$clipId'
   id:
     | '__root__'
     | '/'
@@ -141,6 +153,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/projects/$id'
     | '/app/projects/'
+    | '/app/projects/$id/clips/$clipId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -222,16 +235,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdRouteImport
       parentRoute: typeof AppProjectsRoute
     }
+    '/app/projects/$id/clips/$clipId': {
+      id: '/app/projects/$id/clips/$clipId'
+      path: '/clips/$clipId'
+      fullPath: '/app/projects/$id/clips/$clipId'
+      preLoaderRoute: typeof AppProjectsIdClipsClipIdRouteImport
+      parentRoute: typeof AppProjectsIdRoute
+    }
   }
 }
 
+interface AppProjectsIdRouteChildren {
+  AppProjectsIdClipsClipIdRoute: typeof AppProjectsIdClipsClipIdRoute
+}
+
+const AppProjectsIdRouteChildren: AppProjectsIdRouteChildren = {
+  AppProjectsIdClipsClipIdRoute: AppProjectsIdClipsClipIdRoute,
+}
+
+const AppProjectsIdRouteWithChildren = AppProjectsIdRoute._addFileChildren(
+  AppProjectsIdRouteChildren,
+)
+
 interface AppProjectsRouteChildren {
-  AppProjectsIdRoute: typeof AppProjectsIdRoute
+  AppProjectsIdRoute: typeof AppProjectsIdRouteWithChildren
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
 }
 
 const AppProjectsRouteChildren: AppProjectsRouteChildren = {
-  AppProjectsIdRoute: AppProjectsIdRoute,
+  AppProjectsIdRoute: AppProjectsIdRouteWithChildren,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
 }
 
@@ -264,13 +296,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

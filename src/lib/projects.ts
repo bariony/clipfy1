@@ -7,6 +7,37 @@ export type Clip = Database["public"]["Tables"]["clips"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type CreditTransaction =
   Database["public"]["Tables"]["credit_transactions"]["Row"];
+export type Transcript = Database["public"]["Tables"]["transcripts"]["Row"];
+
+export type TranscriptSegment = { text: string; start: number; end: number };
+
+export const clipQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: ["clip", id],
+    queryFn: async (): Promise<Clip | null> => {
+      const { data, error } = await supabase
+        .from("clips")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const transcriptQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: ["transcript", projectId],
+    queryFn: async (): Promise<Transcript | null> => {
+      const { data, error } = await supabase
+        .from("transcripts")
+        .select("*")
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
 
 export const projectsQueryOptions = () =>
   queryOptions({

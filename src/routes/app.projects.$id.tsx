@@ -517,7 +517,7 @@ function BriefPanel({ initialValue, saving, onSave }: { initialValue: string; sa
   );
 }
 
-function ClipsPanel({ clips }: { clips: Clip[] }) {
+function ClipsPanel({ clips, projectId }: { clips: Clip[]; projectId: string }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
@@ -533,20 +533,27 @@ function ClipsPanel({ clips }: { clips: Clip[] }) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {clips.map((clip) => (
-            <div key={clip.id} className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40">
+            <Link
+              key={clip.id}
+              to="/app/projects/$id/clips/$clipId"
+              params={{ id: projectId, clipId: clip.id }}
+              className="group rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40"
+            >
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-primary">{formatDuration(Number(clip.start_seconds))} → {formatDuration(Number(clip.end_seconds))}</span>
                 {clip.virality_score != null && <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">{clip.virality_score}%</span>}
               </div>
               <div className="mb-1 text-sm font-bold">{clip.title}</div>
               {clip.hook && <p className="text-xs text-muted-foreground">{clip.hook}</p>}
-            </div>
+              <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground group-hover:text-primary">Abrir editor →</div>
+            </Link>
           ))}
         </div>
       )}
     </div>
   );
 }
+
 
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (

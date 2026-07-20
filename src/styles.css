@@ -143,3 +143,42 @@
 @utility animate-reveal {
   animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* -------- Caption word animations (clip editor) -------- */
+@keyframes cap-pop {
+  0%   { transform: scale(0.55) rotate(-4deg); opacity: 0; }
+  55%  { transform: scale(1.18) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+@keyframes cap-slam {
+  0%   { transform: scale(2.2) translateY(-8px); opacity: 0; letter-spacing: 0.08em; }
+  60%  { transform: scale(0.92) translateY(2px); opacity: 1; letter-spacing: -0.01em; }
+  100% { transform: scale(1) translateY(0); letter-spacing: 0; }
+}
+@keyframes cap-bounce {
+  0%   { transform: translateY(14px) scale(0.9); opacity: 0; }
+  55%  { transform: translateY(-6px) scale(1.08); opacity: 1; }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes cap-glow {
+  0%,100% { filter: drop-shadow(0 0 6px hsl(var(--primary) / 0.6)); transform: scale(1.06); }
+  50%     { filter: drop-shadow(0 0 22px hsl(var(--primary) / 1)); transform: scale(1.14); }
+}
+@keyframes cap-flip {
+  0%   { transform: rotateX(90deg) scale(0.8); opacity: 0; }
+  60%  { transform: rotateX(-10deg) scale(1.08); opacity: 1; }
+  100% { transform: rotateX(0) scale(1); }
+}
+@keyframes cap-jitter {
+  0%,100% { transform: translate(0,0) rotate(0); }
+  25%     { transform: translate(-1px,1px) rotate(-1.5deg); }
+  50%     { transform: translate(1px,-1px) rotate(1.5deg); }
+  75%     { transform: translate(-1px,-1px) rotate(-1deg); }
+}
+
+.cap-anim-pop    { animation: cap-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both; display: inline-block; }
+.cap-anim-slam   { animation: cap-slam 320ms cubic-bezier(0.16, 1, 0.3, 1) both; display: inline-block; }
+.cap-anim-bounce { animation: cap-bounce 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both; display: inline-block; }
+.cap-anim-glow   { animation: cap-glow 900ms ease-in-out infinite; display: inline-block; }
+.cap-anim-flip   { animation: cap-flip 340ms cubic-bezier(0.16, 1, 0.3, 1) both; display: inline-block; transform-origin: 50% 100%; }
+.cap-anim-jitter { animation: cap-jitter 320ms ease-in-out both; display: inline-block; }

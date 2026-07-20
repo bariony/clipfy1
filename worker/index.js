@@ -12,7 +12,7 @@ import { request as undiciRequest } from "undici";
 import Groq from "groq-sdk";
 
 const {
-  PORT = "3000",
+  PORT = "8080",
   RENDER_WORKER_SECRET,
   GROQ_API_KEY,
   APP_URL = "https://clipfy1.lovable.app",
@@ -314,6 +314,7 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker" }));
 app.get("/health", async () => ({ ok: true, running, queued: queue.length, worker_id: WORKER_ID }));
 
 app.post("/jobs", async (req, reply) => {

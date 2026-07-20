@@ -22,9 +22,9 @@ RUN npm install --omit=dev
 COPY index.js ./
 
 ENV NODE_ENV=production \
-    PORT=3000 \
+    PORT=8080 \
     WORK_DIR=/tmp/clipfy
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["node", "index.js"]

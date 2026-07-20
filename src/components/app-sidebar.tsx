@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -8,6 +8,7 @@ import {
   Wallet,
   Bell,
   Clapperboard,
+  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -23,6 +24,9 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 const primary = [
   { title: "Dashboard", url: "/app/dashboard", icon: LayoutDashboard },

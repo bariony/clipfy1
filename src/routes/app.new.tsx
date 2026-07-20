@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/new")({
   head: () => ({ meta: [{ title: "New Project — Clipfy" }] }),
-  component: NewProject;
+  component: NewProject,
 });
 
 const LANGUAGES = [

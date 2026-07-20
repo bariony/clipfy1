@@ -18,7 +18,6 @@ import { Route as AppProjectsRouteImport } from './routes/app.projects'
 import { Route as AppNewRouteImport } from './routes/app.new'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.index'
-import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/app.projects.$id.index'
 import { Route as AppProjectsIdClipsClipIdRouteImport } from './routes/app.projects.$id.clips.$clipId'
 
@@ -67,21 +66,16 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppProjectsRoute,
 } as any)
-const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppProjectsRoute,
-} as any)
 const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppProjectsIdRoute,
+  id: '/$id/',
+  path: '/$id/',
+  getParentRoute: () => AppProjectsRoute,
 } as any)
 const AppProjectsIdClipsClipIdRoute =
   AppProjectsIdClipsClipIdRouteImport.update({
-    id: '/clips/$clipId',
-    path: '/clips/$clipId',
-    getParentRoute: () => AppProjectsIdRoute,
+    id: '/$id/clips/$clipId',
+    path: '/$id/clips/$clipId',
+    getParentRoute: () => AppProjectsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -93,7 +87,6 @@ export interface FileRoutesByFullPath {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
@@ -119,7 +112,6 @@ export interface FileRoutesById {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
@@ -135,7 +127,6 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app/projects'
     | '/app/'
-    | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
     | '/app/projects/$id/clips/$clipId'
@@ -160,7 +151,6 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app/projects'
     | '/app/'
-    | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
     | '/app/projects/$id/clips/$clipId'
@@ -238,52 +228,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIndexRouteImport
       parentRoute: typeof AppProjectsRoute
     }
-    '/app/projects/$id': {
-      id: '/app/projects/$id'
-      path: '/$id'
-      fullPath: '/app/projects/$id'
-      preLoaderRoute: typeof AppProjectsIdRouteImport
-      parentRoute: typeof AppProjectsRoute
-    }
     '/app/projects/$id/': {
       id: '/app/projects/$id/'
-      path: '/'
+      path: '/$id'
       fullPath: '/app/projects/$id/'
       preLoaderRoute: typeof AppProjectsIdIndexRouteImport
-      parentRoute: typeof AppProjectsIdRoute
+      parentRoute: typeof AppProjectsRoute
     }
     '/app/projects/$id/clips/$clipId': {
       id: '/app/projects/$id/clips/$clipId'
-      path: '/clips/$clipId'
+      path: '/$id/clips/$clipId'
       fullPath: '/app/projects/$id/clips/$clipId'
       preLoaderRoute: typeof AppProjectsIdClipsClipIdRouteImport
-      parentRoute: typeof AppProjectsIdRoute
+      parentRoute: typeof AppProjectsRoute
     }
   }
 }
 
-interface AppProjectsIdRouteChildren {
+interface AppProjectsRouteChildren {
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppProjectsIdIndexRoute: typeof AppProjectsIdIndexRoute
   AppProjectsIdClipsClipIdRoute: typeof AppProjectsIdClipsClipIdRoute
 }
 
-const AppProjectsIdRouteChildren: AppProjectsIdRouteChildren = {
+const AppProjectsRouteChildren: AppProjectsRouteChildren = {
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppProjectsIdIndexRoute: AppProjectsIdIndexRoute,
   AppProjectsIdClipsClipIdRoute: AppProjectsIdClipsClipIdRoute,
-}
-
-const AppProjectsIdRouteWithChildren = AppProjectsIdRoute._addFileChildren(
-  AppProjectsIdRouteChildren,
-)
-
-interface AppProjectsRouteChildren {
-  AppProjectsIdRoute: typeof AppProjectsIdRouteWithChildren
-  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
-}
-
-const AppProjectsRouteChildren: AppProjectsRouteChildren = {
-  AppProjectsIdRoute: AppProjectsIdRouteWithChildren,
-  AppProjectsIndexRoute: AppProjectsIndexRoute,
 }
 
 const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(

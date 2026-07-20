@@ -296,6 +296,19 @@ function ProjectEditor() {
             onSave={(description) => saveBrief.mutate(description)}
           />
 
+          {(hasUpload || hasYoutube) && (
+            <PreferencesStage
+              projectId={project.id}
+              storagePath={project.storage_path}
+              youtubeUrl={project.source === "youtube" ? project.source_url : null}
+              initialPreferences={(project.preferences ?? {}) as ProjectPreferences}
+              onSaved={() => {
+                invalidateProject();
+                toast.success("Preferências salvas");
+              }}
+            />
+          )}
+
           {canProcessUpload && (
             <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

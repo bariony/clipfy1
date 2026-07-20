@@ -366,6 +366,46 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_project_with_credits: {
+        Args: {
+          _description: string
+          _estimated_cost: number
+          _language: string
+          _max_clip_seconds: number
+          _min_clip_seconds: number
+          _source: Database["public"]["Enums"]["project_source"]
+          _source_url: string
+          _storage_path: string
+          _target_clip_count: number
+          _title: string
+        }
+        Returns: {
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          id: string
+          language: string | null
+          max_clip_seconds: number | null
+          min_clip_seconds: number | null
+          source: Database["public"]["Enums"]["project_source"]
+          source_url: string | null
+          status: Database["public"]["Enums"]["project_status"]
+          storage_path: string | null
+          target_clip_count: number | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          virality_bias: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "projects"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

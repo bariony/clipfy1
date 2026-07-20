@@ -14,6 +14,7 @@ export const PROJECT_STATUSES = [
   "completed",
   "failed",
   "canceled",
+  "archived",
 ] as const;
 
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -33,4 +34,5 @@ export const STATUS_META: Record<
   completed: { label: "Completed", tone: "success" },
   failed: { label: "Failed", tone: "danger" },
   canceled: { label: "Canceled", tone: "neutral" },
+  archived: { label: "Archived", tone: "neutral" },
 };

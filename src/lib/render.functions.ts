@@ -105,7 +105,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
             "content-type": "application/json",
             authorization: `Bearer ${workerSecret}`,
           },
-          body: JSON.stringify({ job_id: job.id }),
+          body: JSON.stringify({ job_id: job.id, edl }),
         });
       } catch (err) {
         console.warn("[render] worker notify failed", err);

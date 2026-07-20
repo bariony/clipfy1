@@ -63,6 +63,18 @@ export const Route = createFileRoute("/api/public/render-callback")({
         if (parsed.output_url) update.output_url = parsed.output_url;
         if (parsed.thumbnail_url) update.thumbnail_url = parsed.thumbnail_url;
 
+        if (parsed.status === "completed") {
+          // Build signed URL from storage path if provided
+          let renderUrl = parsed.output_url ?? null;
+          if (!renderUrl && parsed.output_path) {
+            const { data: signed } = await supabaseAdmin.storage
+              .from("renders")
+              .createSignedUrl(parsed.output_path, 60 * 60 * 24 * 7);
+            renderUrl = signed?.signedUrl ?? null;
+          }
+          if (renderUrl) update.output_url = renderUrl;
+        }
+
         const { data: job, error } = await supabaseAdmin
           .from("render_jobs")
           .update(update)
@@ -73,14 +85,7 @@ export const Route = createFileRoute("/api/public/render-callback")({
         if (!job) return new Response("Job not found", { status: 404 });
 
         if (parsed.status === "completed") {
-          // Build signed URL from storage path if provided
-          let renderUrl = parsed.output_url ?? null;
-          if (!renderUrl && parsed.output_path) {
-            const { data: signed } = await supabaseAdmin.storage
-              .from("renders")
-              .createSignedUrl(parsed.output_path, 60 * 60 * 24 * 7);
-            renderUrl = signed?.signedUrl ?? null;
-          }
+          const renderUrl = update.output_url ?? parsed.output_url ?? null;
           await supabaseAdmin
             .from("clips")
             .update({

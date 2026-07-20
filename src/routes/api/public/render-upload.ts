@@ -37,7 +37,7 @@ export const Route = createFileRoute("/api/public/render-upload")({
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: job, error: jobError } = await supabaseAdmin
           .from("render_jobs")
-          .select("id, edl")
+          .select("id, clip_id, edl")
           .eq("id", jobId)
           .maybeSingle();
         if (jobError) return new Response(jobError.message, { status: 500 });
@@ -58,6 +58,27 @@ export const Route = createFileRoute("/api/public/render-upload")({
             upsert: true,
           });
         if (uploadError) return new Response(uploadError.message, { status: 500 });
+
+        const { data: signed } = await supabaseAdmin.storage
+          .from("renders")
+          .createSignedUrl(outputPath, 60 * 60 * 24 * 7);
+        const renderUrl = signed?.signedUrl ?? null;
+
+        await supabaseAdmin
+          .from("render_jobs")
+          .update({
+            status: "completed",
+            progress: 100,
+            output_url: renderUrl,
+            error_message: null,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", jobId);
+
+        await supabaseAdmin
+          .from("clips")
+          .update({ status: "ready", render_url: renderUrl })
+          .eq("id", job.clip_id);
 
         return Response.json({ ok: true });
       },

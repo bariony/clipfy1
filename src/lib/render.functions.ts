@@ -118,7 +118,8 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
         const message = `Worker recusou o job (${res.status})${detail ? `: ${detail.slice(0, 180)}` : ""}`;
-        await supabase
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin
           .from("render_jobs")
           .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
           .eq("id", job.id);
@@ -126,7 +127,8 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao chamar worker de render";
-      await supabase
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
         .from("render_jobs")
         .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
         .eq("id", job.id);

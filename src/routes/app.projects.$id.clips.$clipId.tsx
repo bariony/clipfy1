@@ -303,6 +303,26 @@ function ClipEditor() {
     onError: (err) => toast.error(err instanceof Error ? err.message : "Falha ao salvar."),
   });
 
+  const enqueueRender = useServerFn(enqueueClipRender);
+  const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      // Save latest edits first so worker uses fresh trim/template/title.
+      await saveMutation.mutateAsync();
+      return enqueueRender({ data: { clipId: clip.id } });
+    },
+    onSuccess: () => {
+      toast.success("Exportação enfileirada.");
+      qc.invalidateQueries({ queryKey: ["render-job", clip.id] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Falha ao exportar."),
+  });
+
+  const isRendering =
+    renderJob?.status === "queued" || renderJob?.status === "processing";
+  const renderReady = renderJob?.status === "completed" && (clip.render_url || renderJob.output_url);
+  const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
+
   const clipDuration = Math.max(0, trim[1] - trim[0]);
   const localT = Math.max(0, currentTime - trim[0]);
 
@@ -329,10 +349,41 @@ function ClipEditor() {
           >
             Cancelar
           </Button>
-          <Button className="rounded-lg font-bold" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          <Button
+            variant="outline"
+            className="border-border bg-transparent"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
             {saveMutation.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
-            Salvar corte
+            Salvar
           </Button>
+          {renderReady && downloadUrl ? (
+            <Button asChild className="rounded-lg font-bold">
+              <a href={downloadUrl} download target="_blank" rel="noreferrer">
+                <Download className="mr-2 size-4" /> Baixar MP4
+              </a>
+            </Button>
+          ) : (
+            <Button
+              className="rounded-lg font-bold"
+              onClick={() => exportMutation.mutate()}
+              disabled={exportMutation.isPending || isRendering}
+            >
+              {exportMutation.isPending || isRendering ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  {renderJob?.status === "processing"
+                    ? `Renderizando ${renderJob.progress ?? 0}%`
+                    : "Na fila…"}
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 size-4" /> Exportar vídeo
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 

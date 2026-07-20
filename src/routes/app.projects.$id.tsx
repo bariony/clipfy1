@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusPill } from "@/components/status-pill";
 import type { ProjectStatus } from "@/lib/project-status";
+import { cn } from "@/lib/utils";
 import {
   projectQueryOptions,
   projectClipsQueryOptions,

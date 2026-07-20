@@ -6,6 +6,17 @@ import { fetchYoutubeTranscript, type TranscriptSegment } from "./youtube.server
 const Input = z.object({ projectId: z.string().uuid() });
 
 const MAX_TRANSCRIBE_BYTES = 200 * 1024 * 1024; // 200MB safety cap for Worker memory
+const YOUTUBE_BLOCKED_PATTERNS = [
+  /youtube is currently blocking/i,
+  /youtube bloqueou/i,
+  /fetching subtitles/i,
+  /não consegui abrir o vídeo do youtube/i,
+  /429/,
+];
+
+function isYoutubeBlockMessage(text: string) {
+  return YOUTUBE_BLOCKED_PATTERNS.some((pattern) => pattern.test(text));
+}
 
 export const transcribeProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -185,6 +196,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
       brief: string | null;
       targetCount: number | null;
     }) => {
+      if (provider.startsWith("youtube:") && isYoutubeBlockMessage(fullText)) {
+        throw new Error(
+          "O YouTube bloqueou as legendas desse vídeo. Nenhum corte foi gerado; envie o arquivo por upload para transcrever de verdade.",
+        );
+      }
+
       await deleteExistingTranscriptAndClips(projectId);
 
       const { error: insErr } = await supabase.from("transcripts").insert({

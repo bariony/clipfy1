@@ -19,6 +19,7 @@ import { Route as AppNewRouteImport } from './routes/app.new'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.index'
 import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
+import { Route as AppProjectsIdIndexRouteImport } from './routes/app.projects.$id.index'
 import { Route as AppProjectsIdClipsClipIdRouteImport } from './routes/app.projects.$id.clips.$clipId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -71,6 +72,11 @@ const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppProjectsRoute,
 } as any)
+const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppProjectsIdRoute,
+} as any)
 const AppProjectsIdClipsClipIdRoute =
   AppProjectsIdClipsClipIdRouteImport.update({
     id: '/clips/$clipId',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AppIndexRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
+  '/app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRoutesByTo {
@@ -98,8 +105,8 @@ export interface FileRoutesByTo {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/new': typeof AppNewRoute
   '/app': typeof AppIndexRoute
-  '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects': typeof AppProjectsIndexRoute
+  '/app/projects/$id': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRoutesById {
@@ -114,6 +121,7 @@ export interface FileRoutesById {
   '/app/': typeof AppIndexRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
+  '/app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
 }
 export interface FileRouteTypes {
@@ -129,6 +137,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/projects/$id'
     | '/app/projects/'
+    | '/app/projects/$id/'
     | '/app/projects/$id/clips/$clipId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -138,8 +147,8 @@ export interface FileRouteTypes {
     | '/app/dashboard'
     | '/app/new'
     | '/app'
-    | '/app/projects/$id'
     | '/app/projects'
+    | '/app/projects/$id'
     | '/app/projects/$id/clips/$clipId'
   id:
     | '__root__'
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/projects/$id'
     | '/app/projects/'
+    | '/app/projects/$id/'
     | '/app/projects/$id/clips/$clipId'
   fileRoutesById: FileRoutesById
 }
@@ -235,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdRouteImport
       parentRoute: typeof AppProjectsRoute
     }
+    '/app/projects/$id/': {
+      id: '/app/projects/$id/'
+      path: '/'
+      fullPath: '/app/projects/$id/'
+      preLoaderRoute: typeof AppProjectsIdIndexRouteImport
+      parentRoute: typeof AppProjectsIdRoute
+    }
     '/app/projects/$id/clips/$clipId': {
       id: '/app/projects/$id/clips/$clipId'
       path: '/clips/$clipId'
@@ -246,10 +263,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppProjectsIdRouteChildren {
+  AppProjectsIdIndexRoute: typeof AppProjectsIdIndexRoute
   AppProjectsIdClipsClipIdRoute: typeof AppProjectsIdClipsClipIdRoute
 }
 
 const AppProjectsIdRouteChildren: AppProjectsIdRouteChildren = {
+  AppProjectsIdIndexRoute: AppProjectsIdIndexRoute,
   AppProjectsIdClipsClipIdRoute: AppProjectsIdClipsClipIdRoute,
 }
 

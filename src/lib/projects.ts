@@ -11,6 +11,11 @@ export type Transcript = Database["public"]["Tables"]["transcripts"]["Row"];
 
 export type TranscriptSegment = { text: string; start: number; end: number };
 
+export function isBlockedYoutubeClip(clip: Pick<Clip, "title" | "hook" | "transcript_excerpt">) {
+  const text = `${clip.title ?? ""} ${clip.hook ?? ""} ${clip.transcript_excerpt ?? ""}`;
+  return /youtube is currently blocking|fetching subtitles|generating a summary|we're sorry/i.test(text);
+}
+
 export const clipQueryOptions = (id: string) =>
   queryOptions({
     queryKey: ["clip", id],
@@ -21,7 +26,7 @@ export const clipQueryOptions = (id: string) =>
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      return data && !isBlockedYoutubeClip(data) ? data : null;
     },
   });
 
@@ -76,7 +81,7 @@ export const projectClipsQueryOptions = (id: string) =>
         .eq("project_id", id)
         .order("virality_score", { ascending: false, nullsFirst: false });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).filter((clip) => !isBlockedYoutubeClip(clip));
     },
   });
 

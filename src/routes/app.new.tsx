@@ -346,7 +346,8 @@ function NewProject() {
                 disabled={createProject.isPending || insufficient}
               >
                 <Wand2 className="mr-2 size-4" />
-                {createProject.isPending ? "Creating..." : "Create project"}
+                {uploading ? `Uploading ${uploadProgress}%` : createProject.isPending ? "Creating..." : "Create project"}
+
               </Button>
             </div>
           </div>

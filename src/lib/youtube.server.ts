@@ -26,6 +26,7 @@ export type YoutubeTranscriptResult = {
 
 const YT_UPLOAD_HINT =
   "O YouTube bloqueou temporariamente essa requisição. Tente novamente em alguns minutos ou envie o arquivo do vídeo pelo upload.";
+const BLOCKED_TRANSCRIPT_TEXT = /youtube is currently blocking|fetching subtitles|generating a summary|we're sorry/i;
 
 const BROWSER_HEADERS = {
   "accept-language": "pt-BR,pt;q=0.9,en;q=0.8",
@@ -196,7 +197,7 @@ async function fetchTranscriptViaProxy(videoId: string): Promise<YoutubeTranscri
     if (text) segments.push({ start, end: start + dur, text });
   }
   const text = segments.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
-  if (!text) return null;
+  if (!text || BLOCKED_TRANSCRIPT_TEXT.test(text)) return null;
   return { text, language: null, duration: null, segments };
 }
 

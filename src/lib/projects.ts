@@ -26,7 +26,7 @@ export const clipQueryOptions = (id: string) =>
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      return data && !isBlockedYoutubeClip(data) ? data : null;
     },
   });
 
@@ -53,7 +53,7 @@ export const projectsQueryOptions = () =>
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).filter((clip) => !isBlockedYoutubeClip(clip));
+      return data ?? [];
     },
   });
 
@@ -81,7 +81,7 @@ export const projectClipsQueryOptions = (id: string) =>
         .eq("project_id", id)
         .order("virality_score", { ascending: false, nullsFirst: false });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).filter((clip) => !isBlockedYoutubeClip(clip));
     },
   });
 

@@ -1,10 +1,12 @@
-import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { Bell, Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/app")({
   component: AppLayout,
@@ -13,6 +15,28 @@ export const Route = createFileRoute("/app")({
 function AppLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const crumb = pathname.replace(/^\/app\/?/, "") || "dashboard";
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !session) {
+      navigate({
+        to: "/auth",
+        search: { mode: "login", redirect: pathname },
+        replace: true,
+      });
+    }
+  }, [loading, session, navigate, pathname]);
+
+  if (loading || !session) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background">
+        <div className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          // authenticating
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider>

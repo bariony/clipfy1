@@ -299,6 +299,75 @@ export type Database = {
         }
         Relationships: []
       }
+      render_jobs: {
+        Row: {
+          clip_id: string
+          completed_at: string | null
+          created_at: string
+          edl: Json
+          error_message: string | null
+          id: string
+          output_url: string | null
+          progress: number
+          project_id: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["render_job_status"]
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+          worker_id: string | null
+        }
+        Insert: {
+          clip_id: string
+          completed_at?: string | null
+          created_at?: string
+          edl?: Json
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          progress?: number
+          project_id: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["render_job_status"]
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+          worker_id?: string | null
+        }
+        Update: {
+          clip_id?: string
+          completed_at?: string | null
+          created_at?: string
+          edl?: Json
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          progress?: number
+          project_id?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["render_job_status"]
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "render_jobs_clip_id_fkey"
+            columns: ["clip_id"]
+            isOneToOne: false
+            referencedRelation: "clips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "render_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transcripts: {
         Row: {
           created_at: string
@@ -436,6 +505,12 @@ export type Database = {
         | "ready"
         | "failed"
         | "archived"
+      render_job_status:
+        | "queued"
+        | "processing"
+        | "completed"
+        | "failed"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -575,6 +650,13 @@ export const Constants = {
         "ready",
         "failed",
         "archived",
+      ],
+      render_job_status: [
+        "queued",
+        "processing",
+        "completed",
+        "failed",
+        "cancelled",
       ],
     },
   },

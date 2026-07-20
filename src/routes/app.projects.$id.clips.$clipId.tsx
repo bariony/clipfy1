@@ -56,53 +56,102 @@ type CaptionStyle = {
   slug: string;
   name: string;
   description: string;
-  base: string; // tailwind classes for base word
-  highlight: string; // classes for active word
-  container: string; // container placement
-  transform?: "uppercase" | "none";
-  weight: string;
+  container: string; // vertical placement
+  wrap: string; // wrapper (font size + weight + tracking + text transform)
+  base: string; // idle word classes
+  highlight: string; // active word classes (color, bg, shadow, stroke)
+  animation:
+    | "cap-anim-pop"
+    | "cap-anim-slam"
+    | "cap-anim-bounce"
+    | "cap-anim-glow"
+    | "cap-anim-flip"
+    | "cap-anim-jitter";
+  chip?: boolean; // render each word as a chip (padding+bg)
 };
+
+// Heavy black stroke used by hormozi/tiktok styles
+const STROKE_BLACK =
+  "[-webkit-text-stroke:3px_#000] [paint-order:stroke_fill]";
+const STROKE_THIN =
+  "[-webkit-text-stroke:2px_#000] [paint-order:stroke_fill]";
 
 const TEMPLATES: CaptionStyle[] = [
   {
-    slug: "bold-yellow",
-    name: "Bold Yellow",
-    description: "Legenda pesada com destaque amarelo — o clássico dos virais.",
-    base: "text-white [text-shadow:0_2px_0_#000,0_4px_8px_rgba(0,0,0,.7)]",
-    highlight: "text-yellow-300 scale-110 [text-shadow:0_0_18px_rgba(250,204,21,.9),0_2px_0_#000]",
+    slug: "hormozi-slam",
+    name: "Hormozi Slam",
+    description: "Branco com traço preto, palavra ativa AMARELA gigante caindo na tela.",
+    container: "bottom-[16%]",
+    wrap: "text-3xl sm:text-4xl md:text-[44px] font-black uppercase tracking-tight leading-[1.05]",
+    base: `text-white ${STROKE_BLACK}`,
+    highlight: `text-yellow-300 ${STROKE_BLACK} drop-shadow-[0_6px_0_rgba(0,0,0,.9)]`,
+    animation: "cap-anim-slam",
+  },
+  {
+    slug: "neon-pulse",
+    name: "Neon Pulse",
+    description: "Ciano em glow, palavra ativa pulsando em lima neon.",
     container: "bottom-[14%]",
-    transform: "uppercase",
-    weight: "font-black",
+    wrap: "text-2xl sm:text-3xl md:text-[38px] font-extrabold uppercase tracking-wide",
+    base: "text-cyan-200/85 [text-shadow:0_0_10px_rgba(103,232,249,.5),0_0_2px_#000]",
+    highlight:
+      "text-[hsl(var(--primary))] [text-shadow:0_0_18px_hsl(var(--primary)/.9),0_0_2px_#000]",
+    animation: "cap-anim-glow",
+  },
+  {
+    slug: "tiktok-chip",
+    name: "TikTok Chip",
+    description: "Cada palavra numa caixinha preta arredondada; ativa vira lima.",
+    container: "bottom-[18%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-black uppercase tracking-tight",
+    base: "text-white bg-black/90 rounded-md px-2.5 py-1",
+    highlight:
+      "text-black bg-[hsl(var(--primary))] rounded-md px-2.5 py-1 shadow-[0_6px_0_rgba(0,0,0,.9)]",
+    animation: "cap-anim-bounce",
+    chip: true,
+  },
+  {
+    slug: "gradient-rush",
+    name: "Gradient Rush",
+    description: "Palavra ativa em gradiente vibrante com leve rotação.",
+    container: "bottom-[16%]",
+    wrap: "text-3xl sm:text-4xl md:text-[42px] font-black uppercase tracking-tight",
+    base: `text-white/85 ${STROKE_THIN}`,
+    highlight:
+      "bg-gradient-to-br from-[hsl(var(--primary))] via-yellow-300 to-orange-400 bg-clip-text text-transparent drop-shadow-[0_4px_10px_rgba(0,0,0,.6)]",
+    animation: "cap-anim-jitter",
   },
   {
     slug: "karaoke-lime",
     name: "Karaoke Lime",
-    description: "Palavra por palavra em lima, animação suave.",
-    base: "text-white/85 [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
-    highlight: "text-[hsl(var(--primary))] scale-[1.08] [text-shadow:0_0_16px_hsl(var(--primary)/.7)]",
+    description: "Karaokê clássico, ativa em lima com pop suave.",
     container: "bottom-[18%]",
-    transform: "none",
-    weight: "font-extrabold",
+    wrap: "text-2xl sm:text-3xl md:text-[36px] font-extrabold tracking-tight",
+    base: "text-white/70 [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
+    highlight:
+      "text-[hsl(var(--primary))] [text-shadow:0_0_16px_hsl(var(--primary)/.75),0_2px_0_#000]",
+    animation: "cap-anim-pop",
   },
   {
-    slug: "minimal-white",
-    name: "Minimal White",
-    description: "Discreto, editorial, sem caixa alta.",
-    base: "text-white/70",
-    highlight: "text-white scale-105",
-    container: "bottom-[10%]",
-    transform: "none",
-    weight: "font-semibold",
+    slug: "flip-cinema",
+    name: "Flip Cinema",
+    description: "Cinemático, palavras giram no eixo X ao entrar.",
+    container: "bottom-[12%]",
+    wrap: "text-2xl sm:text-3xl md:text-[34px] font-semibold tracking-tight",
+    base: "text-white/60 [text-shadow:0_2px_10px_rgba(0,0,0,.6)]",
+    highlight:
+      "text-white [text-shadow:0_0_14px_rgba(255,255,255,.5),0_2px_10px_rgba(0,0,0,.9)]",
+    animation: "cap-anim-flip",
   },
   {
     slug: "big-impact",
     name: "Big Impact",
     description: "Textão gigantesco, cada palavra explode na tela.",
-    base: "text-white [text-shadow:0_4px_0_#000,0_8px_20px_rgba(0,0,0,.8)]",
-    highlight: "text-white scale-125 [text-shadow:0_0_24px_hsl(var(--primary)),0_4px_0_#000]",
     container: "bottom-[22%]",
-    transform: "uppercase",
-    weight: "font-black",
+    wrap: "text-4xl sm:text-5xl md:text-[64px] font-black uppercase tracking-tighter leading-[0.95]",
+    base: `text-white ${STROKE_BLACK} drop-shadow-[0_6px_0_#000]`,
+    highlight: `text-[hsl(var(--primary))] ${STROKE_BLACK} drop-shadow-[0_8px_0_#000]`,
+    animation: "cap-anim-slam",
   },
 ];
 

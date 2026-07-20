@@ -113,21 +113,22 @@ export const transcribeProject = createServerFn({ method: "POST" })
         user_id: userId,
         language: payload.language || project.language || null,
         full_text: fullText,
-        segments: (payload.segments as object) ?? null,
+        segments: (payload.segments as never) ?? null,
         provider: "lovable-ai:openai/gpt-4o-transcribe",
       });
       if (insErr) throw new Error(insErr.message);
 
       // Advance status to analyzing (next fatia will pick this up)
-      const patch: Record<string, unknown> = { status: "analyzing" };
-      if (payload.duration && Number.isFinite(payload.duration)) {
-        patch.duration_seconds = Math.round(payload.duration);
-      }
+      const duration =
+        payload.duration && Number.isFinite(payload.duration) ? Math.round(payload.duration) : null;
       const { error: statusErr } = await supabase
         .from("projects")
-        .update(patch)
+        .update(
+          duration !== null ? { status: "analyzing", duration_seconds: duration } : { status: "analyzing" },
+        )
         .eq("id", project.id);
       if (statusErr) throw new Error(statusErr.message);
+
 
       return { ok: true as const, characters: fullText.length };
     } catch (err) {

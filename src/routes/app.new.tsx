@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Link2, Upload, Wand2 } from "lucide-react";
+import { Link2, Upload, Wand2, X, FileVideo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,10 @@ import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { profileQueryOptions } from "@/lib/projects";
+
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";
+
 
 export const Route = createFileRoute("/app/new")({
   head: () => ({ meta: [{ title: "New Project — Clipfy" }] }),

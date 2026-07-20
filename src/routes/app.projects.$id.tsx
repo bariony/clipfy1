@@ -10,6 +10,7 @@ import {
   FileVideo,
   Link2,
   Loader2,
+  Play,
   Sparkles,
   Trash2,
   Upload,
@@ -102,7 +103,7 @@ function ProjectEditor() {
     onSuccess: () => {
       setSelectedFile(null);
       invalidateProject();
-      toast.success("URL salva", { description: "Projeto pronto para a etapa de ingestão do YouTube." });
+      toast.success("URL salva", { description: "Agora clique em Processar YouTube para gerar os cortes." });
     },
     onError: (err: unknown) => toast.error("Não consegui salvar a URL", { description: err instanceof Error ? err.message : "Tente novamente." }),
   });
@@ -201,16 +202,16 @@ function ProjectEditor() {
     },
   });
 
-  const transcribeFn = useServerFn(transcribeProject);
-  const transcribe = useMutation({
-    mutationFn: () => transcribeFn({ data: { projectId: id } }),
+  const processFn = useServerFn(transcribeProject);
+  const processSource = useMutation({
+    mutationFn: () => processFn({ data: { projectId: id } }),
     onSuccess: (res) => {
       invalidateProject();
-      toast.success("Transcrição pronta", { description: `${res.characters.toLocaleString()} caracteres. Próximo passo: gerar cortes.` });
+      toast.success("Cortes gerados", { description: `${res.clips} sugestões criadas a partir de ${res.characters.toLocaleString()} caracteres.` });
     },
     onError: (err: unknown) => {
       invalidateProject();
-      toast.error("Transcrição falhou", { description: err instanceof Error ? err.message : "Tente novamente." });
+      toast.error("Processamento falhou", { description: err instanceof Error ? err.message : "Tente novamente." });
     },
   });
 
@@ -232,9 +233,10 @@ function ProjectEditor() {
 
   const hasUpload = Boolean(project.storage_path);
   const hasYoutube = project.source === "youtube" && Boolean(project.source_url);
-  const canTranscribe = hasUpload && ["draft", "failed"].includes(project.status);
+  const canProcessUpload = hasUpload && ["draft", "failed"].includes(project.status);
+  const canProcessYoutube = hasYoutube && !hasUpload && ["draft", "failed"].includes(project.status);
   const isUploading = uploadVideo.isPending || project.status === "uploading";
-  const isTranscribing = transcribe.isPending || project.status === "transcribing";
+  const isProcessing = processSource.isPending || project.status === "transcribing" || project.status === "analyzing";
   const currentStep = getCurrentStep(project.status, hasUpload, hasYoutube);
 
   return (
@@ -293,7 +295,7 @@ function ProjectEditor() {
             onSave={(description) => saveBrief.mutate(description)}
           />
 
-          {canTranscribe && (
+          {canProcessUpload && (
             <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
@@ -302,25 +304,35 @@ function ProjectEditor() {
                   </div>
                   <div>
                     <h2 className="text-base font-extrabold">Vídeo pronto</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Transcreva para abrir caminho para análise e geração dos cortes.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Clique para transcrever, analisar e gerar os cortes sugeridos.</p>
                   </div>
                 </div>
-                <Button size="lg" className="rounded-xl font-extrabold" onClick={() => transcribe.mutate()} disabled={isTranscribing}>
-                  {isTranscribing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
-                  {isTranscribing ? "Transcrevendo…" : "Transcrever vídeo"}
+                <Button size="lg" className="rounded-xl font-extrabold" onClick={() => processSource.mutate()} disabled={isProcessing}>
+                  {isProcessing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
+                  {isProcessing ? "Processando…" : "Processar vídeo"}
                 </Button>
               </div>
             </div>
           )}
 
           {hasYoutube && !hasUpload && (
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-start gap-3">
-                <Youtube className="mt-0.5 size-5 text-primary" />
-                <div>
-                  <h2 className="text-sm font-bold">URL do YouTube salva</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">O MVP já organiza o projeto por URL. A ingestão automática do YouTube fica isolada desta etapa para não travar criação, upload ou acesso ao draft.</p>
+            <div className="rounded-2xl border border-primary/30 bg-card p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <Youtube className="size-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold">URL do YouTube pronta</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">O processamento puxa legendas públicas, cria a transcrição e gera sugestões de cortes.</p>
+                  </div>
                 </div>
+                {canProcessYoutube && (
+                  <Button size="lg" className="rounded-xl font-extrabold" onClick={() => processSource.mutate()} disabled={isProcessing}>
+                    {isProcessing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Play className="mr-2 size-4" />}
+                    {isProcessing ? "Processando…" : "Processar YouTube"}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -551,12 +563,12 @@ function ReadyBadge({ label }: { label: string }) {
 
 function getCurrentStep(status: string, hasUpload: boolean, hasYoutube: boolean) {
   if (status === "uploading") return "Upload em andamento.";
-  if (status === "transcribing") return "Transcrevendo o vídeo.";
-  if (status === "analyzing") return "Transcrição criada. Próxima etapa: análise de cortes.";
+  if (status === "transcribing") return "Buscando/transcrevendo a fonte.";
+  if (status === "analyzing") return "Analisando momentos fortes e gerando cortes.";
   if (status === "ready") return "Cortes prontos para revisar.";
   if (status === "failed") return hasUpload ? "Corrija o erro ou tente transcrever novamente." : "Corrija o erro e continue.";
-  if (hasUpload) return "Vídeo anexado. Clique em transcrever.";
-  if (hasYoutube) return "URL salva. O projeto está organizado para ingestão do YouTube.";
+  if (hasUpload) return "Vídeo anexado. Clique em Processar vídeo.";
+  if (hasYoutube) return "URL salva. Clique em Processar YouTube.";
   return "Adicione um vídeo ou cole uma URL do YouTube.";
 }
 

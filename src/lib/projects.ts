@@ -79,14 +79,12 @@ export const dashboardStatsQueryOptions = () =>
       if (clipsRes.error) throw clipsRes.error;
       const projects = projectsRes.data ?? [];
       const clips = clipsRes.data ?? [];
-      const active = projects.filter(
-        (p) =>
-          p.status === "queued" ||
-          p.status === "transcribing" ||
-          p.status === "analyzing" ||
-          p.status === "rendering" ||
-          p.status === "uploading",
-      ).length;
+      const activeStatuses: Array<Database["public"]["Enums"]["project_status"]> = [
+        "transcribing",
+        "analyzing",
+        "uploading",
+      ];
+      const active = projects.filter((p) => activeStatuses.includes(p.status)).length;
       const avgVirality =
         clips.length > 0
           ? Math.round(

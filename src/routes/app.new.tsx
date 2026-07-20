@@ -116,7 +116,7 @@ function NewProject() {
         storagePath = await uploadWithProgress(id, file);
         const { error: updateError } = await supabase
           .from("projects")
-          .update({ storage_path: storagePath, status: "uploaded", error_message: null })
+          .update({ storage_path: storagePath, status: "draft", error_message: null })
           .eq("id", id);
         if (updateError) throw updateError;
       } catch (err) {

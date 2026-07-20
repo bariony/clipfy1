@@ -246,7 +246,7 @@ function NewProject() {
                 onClick={() => setSource("upload")}
                 icon={Upload}
                 label="Upload file"
-                hint="Coming soon"
+                hint="MP4 · MOV · WEBM"
               />
               <SourceTab
                 active={source === "youtube"}
@@ -258,13 +258,19 @@ function NewProject() {
             </div>
 
             {source === "upload" ? (
-              <div className="rounded-xl border-2 border-dashed border-border bg-card/40 px-6 py-10 text-center">
-                <Upload className="mx-auto mb-3 size-6 text-muted-foreground" />
-                <div className="text-sm font-semibold">Upload will unlock in the next slice</div>
-                <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  For now, use a YouTube URL
-                </div>
-              </div>
+              <FileDropzone
+                file={file}
+                progress={uploadProgress}
+                uploading={uploading}
+                onPick={pickFile}
+                onClear={() => {
+                  setFile(null);
+                  setUploadProgress(0);
+                }}
+                onCancel={cancelUpload}
+                inputRef={fileInputRef}
+              />
+
             ) : (
               <Input
                 value={youtubeUrl}

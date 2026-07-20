@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-ro
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -370,7 +371,7 @@ function SourceStage({
   selectedFile: File | null;
   progress: number;
   uploading: boolean;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLInputElement | null>;
   onPick: (file: File | null) => void;
   onClear: () => void;
   onCancel: () => void;
@@ -438,7 +439,7 @@ function VideoUploadPanel({ file, hasVideo, progress, uploading, inputRef, onPic
   hasVideo: boolean;
   progress: number;
   uploading: boolean;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLInputElement | null>;
   onPick: (file: File | null) => void;
   onClear: () => void;
   onCancel: () => void;
@@ -535,7 +536,7 @@ function ClipsPanel({ clips }: { clips: Clip[] }) {
   );
 }
 
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>

@@ -434,3 +434,104 @@ function SliderRow({
     </div>
   );
 }
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function FileDropzone({
+  file,
+  progress,
+  uploading,
+  onPick,
+  onClear,
+  onCancel,
+  inputRef,
+}: {
+  file: File | null;
+  progress: number;
+  uploading: boolean;
+  onPick: (f: File | null) => void;
+  onClear: () => void;
+  onCancel: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  if (file) {
+    return (
+      <div className="rounded-xl border border-border bg-card/60 p-4">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-lg bg-primary/15 text-primary">
+            <FileVideo className="size-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{file.name}</div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {formatBytes(file.size)}
+              {uploading ? ` · uploading ${progress}%` : " · ready"}
+            </div>
+          </div>
+          {uploading ? (
+            <Button type="button" variant="outline" size="sm" onClick={onCancel} className="border-border bg-transparent">
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onClear}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Remove file"
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+        </div>
+        {uploading && (
+          <div className="mt-3">
+            <Progress value={progress} className="h-1.5" />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <label
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        const dropped = e.dataTransfer.files?.[0];
+        if (dropped) onPick(dropped);
+      }}
+      className={cn(
+        "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+        dragging ? "border-primary bg-primary/5" : "border-border bg-card/40 hover:border-primary/50",
+      )}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED}
+        className="hidden"
+        onChange={(e) => onPick(e.target.files?.[0] ?? null)}
+      />
+      <Upload className="mb-3 size-6 text-muted-foreground" />
+      <div className="text-sm font-semibold">Drop your video here or click to browse</div>
+      <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        MP4 · MOV · WEBM · MKV — up to 500MB
+      </div>
+    </label>
+  );
+}
+

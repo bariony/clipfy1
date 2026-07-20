@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestUrl } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createHmac, randomUUID } from "crypto";
 import { z } from "zod";
 
 const Input = z.object({ clipId: z.string().uuid() });
@@ -52,21 +54,16 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       throw new Error("Worker de render não configurado. Verifique RENDER_WORKER_URL e RENDER_WORKER_SECRET.");
     }
 
+    const jobId = randomUUID();
     const outputPath = `${userId}/${project.id}/${clip.id}-${Date.now()}.mp4`;
-
-    // Signed PUT URL so the worker can upload the final MP4 without service-role key
-    const { data: uploadSigned, error: uploadErr } = await supabase.storage
-      .from("renders")
-      .createSignedUploadUrl(outputPath);
-    if (uploadErr) throw new Error(`upload url: ${uploadErr.message}`);
-
-    const signedUploadUrl =
-      uploadSigned?.signedUrl ??
-      (uploadSigned as { signedURL?: string } | null)?.signedURL ??
-      null;
-    if (!signedUploadUrl) {
-      throw new Error("Não foi possível gerar a URL segura de upload do MP4. Tente exportar novamente.");
-    }
+    const expires = Math.floor(Date.now() / 1000) + 60 * 60 * 6;
+    const signaturePayload = `${jobId}:${outputPath}:${expires}`;
+    const uploadSignature = createHmac("sha256", workerSecret).update(signaturePayload).digest("hex");
+    const uploadUrl = new URL("/api/public/render-upload", getRequestUrl().origin);
+    uploadUrl.searchParams.set("job_id", jobId);
+    uploadUrl.searchParams.set("path", outputPath);
+    uploadUrl.searchParams.set("expires", String(expires));
+    uploadUrl.searchParams.set("sig", uploadSignature);
 
     const edl = {
       version: 1,
@@ -74,8 +71,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       output: {
         bucket: "renders",
         path: outputPath,
-        upload_url: signedUploadUrl,
-        upload_token: uploadSigned?.token ?? null,
+        upload_url: uploadUrl.toString(),
         aspect_ratio:
           (project.preferences as { aspect_ratio?: string } | null)?.aspect_ratio ?? "9:16",
       },
@@ -98,6 +94,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
     const { data: job, error: insertErr } = await supabase
       .from("render_jobs")
       .insert({
+        id: jobId,
         user_id: userId,
         project_id: project.id,
         clip_id: clip.id,

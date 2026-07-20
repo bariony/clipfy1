@@ -31,6 +31,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
+import { PreferencesStage, type ProjectPreferences } from "@/components/preferences-stage";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";

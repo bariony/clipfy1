@@ -35,7 +35,7 @@ import { transcribeProject } from "@/lib/transcribe.functions";
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";
 
-export const Route = createFileRoute("/app/projects/$id")({
+export const Route = createFileRoute("/app/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — Clipfy" }] }),
   loader: async ({ params, context }) => {
     const project = await context.queryClient.ensureQueryData(projectQueryOptions(params.id));

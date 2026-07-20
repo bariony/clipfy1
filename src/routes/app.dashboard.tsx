@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Clock,
   FolderKanban,
   Plus,
   Sparkles,
@@ -11,62 +10,44 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import type { ProjectStatus } from "@/lib/project-status";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import {
+  dashboardStatsQueryOptions,
+  profileQueryOptions,
+  projectsQueryOptions,
+  formatDuration,
+  timeAgo,
+} from "@/lib/projects";
 
 export const Route = createFileRoute("/app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Clipfy" }] }),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(projectsQueryOptions()),
+      context.queryClient.ensureQueryData(profileQueryOptions()),
+      context.queryClient.ensureQueryData(dashboardStatsQueryOptions()),
+    ]),
   component: Dashboard,
+  errorComponent: ({ error }) => (
+    <div className="p-8 text-sm text-destructive">Failed to load dashboard: {error.message}</div>
+  ),
 });
 
-const stats = [
-  { label: "Projects", value: "12", hint: "3 active", icon: FolderKanban },
-  { label: "Videos processed", value: "84", hint: "+6 this week", icon: Video },
-  { label: "Credits", value: "1,240", hint: "of 1,500", icon: Wallet },
-  { label: "Avg. viral score", value: "82%", hint: "+4% MoM", icon: TrendingUp },
-];
-
-const recent: Array<{
-  id: string;
-  name: string;
-  status: ProjectStatus;
-  duration: string;
-  clips: number;
-  when: string;
-}> = [
-  {
-    id: "1",
-    name: "Podcast E42 · Founder mode",
-    status: "ready",
-    duration: "58:12",
-    clips: 12,
-    when: "2h ago",
-  },
-  {
-    id: "2",
-    name: "Interview · Sarah Chen",
-    status: "rendering",
-    duration: "1:24:03",
-    clips: 8,
-    when: "Yesterday",
-  },
-  {
-    id: "3",
-    name: "VOD · Twitch stream 08.14",
-    status: "analyzing",
-    duration: "3:12:45",
-    clips: 0,
-    when: "3d ago",
-  },
-  {
-    id: "4",
-    name: "Keynote · Q3 launch",
-    status: "completed",
-    duration: "42:18",
-    clips: 15,
-    when: "Last week",
-  },
-];
-
 function Dashboard() {
+  const { data: projects } = useSuspenseQuery(projectsQueryOptions());
+  const { data: profile } = useSuspenseQuery(profileQueryOptions());
+  const { data: stats } = useSuspenseQuery(dashboardStatsQueryOptions());
+
+  const recent = projects.slice(0, 6);
+  const credits = profile?.credits ?? 0;
+
+  const cards = [
+    { label: "Projects", value: stats.totalProjects.toString(), hint: `${stats.active} active`, icon: FolderKanban },
+    { label: "Clips generated", value: stats.totalClips.toString(), hint: "across all projects", icon: Video },
+    { label: "Credits", value: credits.toLocaleString(), hint: "current balance", icon: Wallet },
+    { label: "Avg. viral score", value: stats.avgVirality ? `${stats.avgVirality}%` : "—", hint: "clip average", icon: TrendingUp },
+  ];
+
   return (
     <div className="px-6 py-8">
       <div className="mb-8 flex items-end justify-between">
@@ -87,13 +68,9 @@ function Dashboard() {
         </Button>
       </div>
 
-      {/* Stats */}
       <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className="rounded-2xl border border-border bg-card p-5"
-          >
+        {cards.map((s) => (
+          <div key={s.label} className="rounded-2xl border border-border bg-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 {s.label}
@@ -106,7 +83,6 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* Recent + Sidebar cards */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
@@ -118,85 +94,82 @@ function Dashboard() {
               View all →
             </Link>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Project</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Duration</th>
-                  <th className="px-4 py-3 text-left font-medium">Clips</th>
-                  <th className="px-4 py-3 text-right font-medium">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-b border-border/60 last:border-0 hover:bg-secondary/40"
-                  >
-                    <td className="px-4 py-3 font-medium">{p.name}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill status={p.status} />
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                      {p.duration}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{p.clips}</td>
-                    <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
-                      {p.when}
-                    </td>
+          {recent.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+              <div className="mb-2 text-sm font-semibold">No projects yet</div>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Create your first project to start generating clips.
+              </p>
+              <Button asChild size="sm" className="rounded-lg font-bold">
+                <Link to="/app/new">
+                  <Plus className="mr-1 size-4" /> New Project
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <th className="px-4 py-3 text-left font-medium">Project</th>
+                    <th className="px-4 py-3 text-left font-medium">Status</th>
+                    <th className="px-4 py-3 text-left font-medium">Duration</th>
+                    <th className="px-4 py-3 text-left font-medium">Target</th>
+                    <th className="px-4 py-3 text-right font-medium">Created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {recent.map((p) => (
+                    <tr key={p.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/40">
+                      <td className="px-4 py-3">
+                        <Link to="/app/projects/$id" params={{ id: p.id }} className="font-medium hover:text-primary">
+                          {p.title}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill status={p.status as ProjectStatus} />
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {formatDuration(p.duration_seconds)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{p.target_clip_count ?? 0}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
+                        {timeAgo(p.created_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
-          {/* Credits card */}
           <div className="rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center justify-between">
               <div className="font-mono text-[10px] uppercase tracking-widest text-primary">
-                Monthly usage
+                Credits
               </div>
               <Wallet className="size-4 text-primary" />
             </div>
-            <div className="mb-1 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold">1,240</span>
-              <span className="font-mono text-xs text-muted-foreground">of 1,500 credits</span>
+            <div className="text-4xl font-extrabold tracking-tight">
+              {credits.toLocaleString()}
             </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
-              <div className="h-full w-4/5 bg-primary" />
+            <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+              available balance
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">
-              Renews Jul 30. Upgrade anytime for more processing power.
-            </p>
-            <Button variant="outline" className="mt-4 w-full border-border bg-transparent">
-              Manage plan
-            </Button>
-          </div>
-
-          {/* AI hint */}
-          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-6">
-            <Sparkles className="mb-3 size-5 text-primary" />
-            <div className="mb-1 text-sm font-bold">AI tip of the day</div>
-            <p className="text-xs text-muted-foreground">
-              Podcast episodes over 40 min average 3× more high-scoring clips. Try dropping a
-              full interview.
-            </p>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6">
             <div className="mb-3 flex items-center gap-2">
-              <Clock className="size-4 text-primary" />
-              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Processing queue
+              <Sparkles className="size-4 text-primary" />
+              <div className="font-mono text-[10px] uppercase tracking-widest text-primary">
+                Tip
               </div>
             </div>
-            <div className="text-sm text-muted-foreground">
-              1 job rendering · 1 job analyzing
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Longer source videos generally produce more viral moments. Aim for 20–90 min sources for the best hit rate.
+            </p>
           </div>
         </div>
       </div>

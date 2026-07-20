@@ -2,30 +2,21 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { FolderKanban, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { projectsQueryOptions, formatDuration, timeAgo } from "@/lib/projects";
 import type { ProjectStatus } from "@/lib/project-status";
 
 export const Route = createFileRoute("/app/projects")({
   head: () => ({ meta: [{ title: "Projects — Clipfy" }] }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(projectsQueryOptions()),
   component: Projects,
+  errorComponent: ({ error }) => (
+    <div className="p-8 text-sm text-destructive">Failed to load projects: {error.message}</div>
+  ),
 });
 
-const projects: Array<{
-  id: string;
-  name: string;
-  duration: string;
-  status: ProjectStatus;
-  clips: number;
-  when: string;
-}> = [
-  { id: "1", name: "Podcast E42 · Founder mode", duration: "58:12", status: "ready", clips: 12, when: "2h ago" },
-  { id: "2", name: "Interview · Sarah Chen", duration: "1:24:03", status: "rendering", clips: 8, when: "Yesterday" },
-  { id: "3", name: "VOD · Twitch stream 08.14", duration: "3:12:45", status: "analyzing", clips: 0, when: "3d ago" },
-  { id: "4", name: "Keynote · Q3 launch", duration: "42:18", status: "completed", clips: 15, when: "1w ago" },
-  { id: "5", name: "Workshop · Design tokens", duration: "1:02:34", status: "draft", clips: 0, when: "2w ago" },
-  { id: "6", name: "Livestream · Dev Q&A", duration: "2:14:00", status: "failed", clips: 0, when: "3w ago" },
-];
-
 function Projects() {
+  const { data: projects } = useSuspenseQuery(projectsQueryOptions());
   const empty = projects.length === 0;
 
   return (
@@ -53,31 +44,33 @@ function Projects() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
-            <div
+            <Link
               key={p.id}
+              to="/app/projects/$id"
+              params={{ id: p.id }}
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40"
             >
               <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-secondary via-background to-secondary">
                 <div className="pointer-events-none absolute inset-0 grid place-items-center">
                   <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                    Thumbnail
+                    {p.source === "youtube" ? "YouTube" : "Upload"}
                   </div>
                 </div>
                 <div className="absolute right-3 top-3">
-                  <StatusPill status={p.status} />
+                  <StatusPill status={p.status as ProjectStatus} />
                 </div>
                 <div className="absolute bottom-3 right-3 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white/90 backdrop-blur">
-                  {p.duration}
+                  {formatDuration(p.duration_seconds)}
                 </div>
               </div>
               <div className="flex flex-1 flex-col p-4">
-                <h3 className="mb-2 truncate text-sm font-bold">{p.name}</h3>
+                <h3 className="mb-2 truncate text-sm font-bold">{p.title}</h3>
                 <div className="mt-auto flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <span>{p.clips} clips</span>
-                  <span>{p.when}</span>
+                  <span>{p.target_clip_count ?? 0} target clips</span>
+                  <span>{timeAgo(p.created_at)}</span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
@@ -93,7 +86,7 @@ function EmptyState() {
       </div>
       <h3 className="mb-2 text-lg font-bold">No projects yet</h3>
       <p className="mb-6 max-w-sm text-sm text-muted-foreground">
-        Kick off your first project by uploading a video or pasting a YouTube link.
+        Kick off your first project by pasting a YouTube link.
       </p>
       <Button asChild className="rounded-xl font-bold">
         <Link to="/app/new">

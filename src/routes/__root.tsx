@@ -89,17 +89,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Clipfy is the AI video architect that turns podcasts and long-form videos into viral Shorts, Reels and TikToks — with captions, viral scoring, and one-click multi-format render.",
+          "AI clipping for YouTube Shorts, TikTok and Instagram Reels. Auto-transcribe, score viral moments, caption, and render in every format.",
       },
       { name: "author", content: "Clipfy" },
       { property: "og:title", content: "Clipfy — Long videos in. Viral clips out." },
       {
         property: "og:description",
         content:
-          "AI-powered clipping for YouTube Shorts, TikTok and Reels. Find high-retention moments, auto-caption, and render in every format.",
+          "AI clipping for YouTube Shorts, TikTok and Instagram Reels. Auto-transcribe, score viral moments, caption, and render in every format.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Clipfy — Long videos in. Viral clips out." },
+      { name: "twitter:description", content: "AI clipping for YouTube Shorts, TikTok and Instagram Reels. Auto-transcribe, score viral moments, caption, and render in every format." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/95996ba0-bb8d-444e-b46c-daea21075dd4/id-preview-981007e8--758ab4c4-a351-4c0a-bbc1-e88376f8b52b.lovable.app-1784559871496.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/95996ba0-bb8d-444e-b46c-daea21075dd4/id-preview-981007e8--758ab4c4-a351-4c0a-bbc1-e88376f8b52b.lovable.app-1784559871496.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

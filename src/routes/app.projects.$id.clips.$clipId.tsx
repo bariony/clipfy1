@@ -492,23 +492,27 @@ function CaptionOverlay({ words, activeIdx, style }: { words: Word[]; activeIdx:
   // Window: current word + 2 before + 3 after (or first 6 if no active)
   const idx = activeIdx >= 0 ? activeIdx : 0;
   const start = Math.max(0, idx - 2);
-  const window = words.slice(start, start + 6);
+  const windowWords = words.slice(start, start + 6);
   return (
-    <div className={cn("pointer-events-none absolute inset-x-0 flex justify-center px-6", style.container)}>
+    <div className={cn("pointer-events-none absolute inset-x-0 flex justify-center px-4", style.container)}>
       <div
         className={cn(
-          "flex max-w-[92%] flex-wrap justify-center gap-x-2 gap-y-1 text-center text-2xl leading-tight sm:text-3xl md:text-4xl",
-          style.weight,
-          style.transform === "uppercase" && "uppercase tracking-tight",
+          "flex max-w-[94%] flex-wrap justify-center gap-x-2 gap-y-2 text-center",
+          style.wrap,
         )}
       >
-        {window.map((w, i) => {
+        {windowWords.map((w, i) => {
           const globalIdx = start + i;
           const isActive = globalIdx === activeIdx;
           return (
             <span
-              key={`${globalIdx}-${w.start}`}
-              className={cn("inline-block transition-transform duration-150", isActive ? style.highlight : style.base)}
+              // key retriggers the CSS animation each time this word becomes active
+              key={`${globalIdx}-${isActive ? `A${activeIdx}` : "i"}`}
+              className={cn(
+                "inline-block will-change-transform",
+                isActive ? style.highlight : style.base,
+                isActive && style.animation,
+              )}
             >
               {w.text}
             </span>

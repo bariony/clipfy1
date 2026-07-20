@@ -105,10 +105,11 @@ export async function fetchYoutubeTranscript(sourceUrl: string): Promise<Youtube
   if (!player) {
     try {
       player = await fetchPlayerViaInnertube(videoId);
-    } catch (err) {
-      const status = (err as Error & { status?: number }).status;
-      if (status === 429) throw new Error(YT_UPLOAD_HINT);
-      throw new Error("Não consegui abrir o vídeo do YouTube. Tente novamente ou envie o arquivo.");
+    } catch {
+      // Both YouTube endpoints failed (likely 429). Try the public proxy directly.
+      const fallback = await fetchTranscriptViaProxy(videoId).catch(() => null);
+      if (fallback && fallback.text) return fallback;
+      throw new Error(YT_UPLOAD_HINT);
     }
   }
 

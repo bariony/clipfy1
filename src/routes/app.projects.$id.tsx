@@ -337,7 +337,7 @@ function ProjectEditor() {
             </div>
           )}
 
-          <ClipsPanel clips={clips} />
+          <ClipsPanel clips={clips} projectId={project.id} />
         </div>
 
         <aside className="space-y-4">

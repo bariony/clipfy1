@@ -49,6 +49,24 @@ function ProjectEditor() {
   const { data: project } = useSuspenseQuery(projectQueryOptions(id));
   const { data: clips } = useSuspenseQuery(projectClipsQueryOptions(id));
 
+  const transcribeFn = useServerFn(transcribeProject);
+  const transcribe = useMutation({
+    mutationFn: () => transcribeFn({ data: { projectId: id } }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Transcription complete", {
+        description: `${res.characters.toLocaleString()} characters. Ready for analysis.`,
+      });
+    },
+    onError: (err: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      toast.error("Transcription failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
+
   const deleteProject = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("projects").delete().eq("id", id);
@@ -67,7 +85,14 @@ function ProjectEditor() {
     },
   });
 
+  const canTranscribe =
+    project?.source === "upload" &&
+    !!project?.storage_path &&
+    ["draft", "uploading", "failed"].includes(project?.status ?? "");
+  const isBusy = transcribe.isPending || project?.status === "transcribing";
+
   if (!project) return null;
+
 
   return (
     <div className="px-6 py-8">

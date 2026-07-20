@@ -1,6 +1,7 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useSuspenseQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Clapperboard, Trash2, Wand2, Youtube } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { ArrowLeft, Clapperboard, Sparkles, Trash2, Wand2, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
@@ -12,6 +13,8 @@ import {
   timeAgo,
 } from "@/lib/projects";
 import { supabase } from "@/integrations/supabase/client";
+import { transcribeProject } from "@/lib/transcribe.functions";
+
 
 export const Route = createFileRoute("/app/projects/$id")({
   head: () => ({ meta: [{ title: "Project — Clipfy" }] }),
@@ -46,6 +49,24 @@ function ProjectEditor() {
   const { data: project } = useSuspenseQuery(projectQueryOptions(id));
   const { data: clips } = useSuspenseQuery(projectClipsQueryOptions(id));
 
+  const transcribeFn = useServerFn(transcribeProject);
+  const transcribe = useMutation({
+    mutationFn: () => transcribeFn({ data: { projectId: id } }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Transcription complete", {
+        description: `${res.characters.toLocaleString()} characters. Ready for analysis.`,
+      });
+    },
+    onError: (err: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      toast.error("Transcription failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
+
   const deleteProject = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("projects").delete().eq("id", id);
@@ -64,7 +85,14 @@ function ProjectEditor() {
     },
   });
 
+  const canTranscribe =
+    project?.source === "upload" &&
+    !!project?.storage_path &&
+    ["draft", "uploading", "failed"].includes(project?.status ?? "");
+  const isBusy = transcribe.isPending || project?.status === "transcribing";
+
   if (!project) return null;
+
 
   return (
     <div className="px-6 py-8">
@@ -90,6 +118,16 @@ function ProjectEditor() {
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          {canTranscribe && (
+            <Button
+              className="rounded-lg font-bold"
+              onClick={() => transcribe.mutate()}
+              disabled={isBusy}
+            >
+              <Sparkles className="mr-2 size-4" />
+              {isBusy ? "Transcribing…" : "Transcribe"}
+            </Button>
+          )}
           <Button
             variant="outline"
             className="border-border bg-transparent"
@@ -104,6 +142,7 @@ function ProjectEditor() {
             Delete
           </Button>
         </div>
+
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

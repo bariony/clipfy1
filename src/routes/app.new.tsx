@@ -302,38 +302,4 @@ function parseUploadError(responseText: string, status: number) {
   }
   return `Upload falhou (${status}).`;
 }
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SliderRow({
-  label,
-  value,
-  unit,
-  min,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  min: number;
-  max: number;
-  onChange: (v: number[]) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="font-mono text-sm font-bold text-primary">
-          {value}
-          {unit}
-        </span>
-      </div>
-      <Slider value={[value]} onValueChange={onChange} min={min} max={max} step={1} />
-    </div>
-  );
-}
 

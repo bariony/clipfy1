@@ -1,0 +1,1 @@
+UPDATE public.render_jobs SET status='failed', error_message='Job criado antes da correção — reenfileirar', updated_at=now() WHERE status IN ('queued','processing') AND created_at < now() - interval '1 minute';

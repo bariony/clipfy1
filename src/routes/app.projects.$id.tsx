@@ -118,6 +118,16 @@ function ProjectEditor() {
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          {canTranscribe && (
+            <Button
+              className="rounded-lg font-bold"
+              onClick={() => transcribe.mutate()}
+              disabled={isBusy}
+            >
+              <Sparkles className="mr-2 size-4" />
+              {isBusy ? "Transcribing…" : "Transcribe"}
+            </Button>
+          )}
           <Button
             variant="outline"
             className="border-border bg-transparent"
@@ -132,6 +142,7 @@ function ProjectEditor() {
             Delete
           </Button>
         </div>
+
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

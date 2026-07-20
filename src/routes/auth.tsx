@@ -1,14 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Clapperboard, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 
 const searchSchema = z.object({
   mode: z.enum(["login", "signup"]).optional(),
+  redirect: z.string().optional(),
 });
 
 export const Route = createFileRoute("/auth")({
@@ -23,7 +26,7 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { mode: initialMode } = Route.useSearch();
+  const { mode: initialMode, redirect } = Route.useSearch();
   const [mode, setMode] = useState<"login" | "signup">(initialMode ?? "login");
   const navigate = useNavigate();
 
@@ -31,19 +34,74 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const destination = isSafeRedirect(redirect) ? redirect! : "/app/dashboard";
+
+  // If already signed in, bounce.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled && data.session) {
+        navigate({ to: destination, replace: true });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [destination, navigate]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    // Backend (Supabase Auth) will be wired in the next slice.
-    // For now, this is a UI-only stub. Persist a lightweight flag so the app shell renders.
-    await new Promise((r) => setTimeout(r, 500));
-    setLoading(false);
-    toast.success(
-      mode === "login" ? "Signed in (UI stub)" : "Account created (UI stub)",
-      { description: "Auth backend will be wired in the next slice." },
-    );
-    navigate({ to: "/app/dashboard" });
+    try {
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}${destination}`,
+            data: { full_name: name },
+          },
+        });
+        if (error) throw error;
+        toast.success("Account created", {
+          description: "Check your email if confirmation is required.",
+        });
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        toast.success("Signed in");
+      }
+      navigate({ to: destination, replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Authentication failed";
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onGoogle() {
+    setGoogleLoading(true);
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+      });
+      if (result.error) {
+        const msg =
+          result.error instanceof Error ? result.error.message : String(result.error);
+        toast.error(msg);
+        return;
+      }
+      if (result.redirected) return; // browser is navigating away
+      // Popup flow: tokens set, session ready
+      navigate({ to: destination, replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
   }
 
   return (
@@ -121,6 +179,7 @@ function AuthPage() {
               <Input
                 id="email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@studio.com"
@@ -135,11 +194,17 @@ function AuthPage() {
                   <button
                     type="button"
                     className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-                    onClick={() =>
-                      toast("Password reset flow ships with auth backend", {
-                        description: "Coming in the next slice.",
-                      })
-                    }
+                    onClick={async () => {
+                      if (!email) {
+                        toast("Enter your email first");
+                        return;
+                      }
+                      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                        redirectTo: `${window.location.origin}/reset-password`,
+                      });
+                      if (error) toast.error(error.message);
+                      else toast.success("Reset link sent");
+                    }}
                   >
                     Forgot?
                   </button>
@@ -148,6 +213,7 @@ function AuthPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -176,14 +242,12 @@ function AuthPage() {
           </div>
 
           <Button
+            type="button"
             variant="outline"
             className="w-full rounded-xl border-border bg-transparent font-semibold"
             size="lg"
-            onClick={() =>
-              toast("Google sign-in wires up with the auth backend", {
-                description: "Coming in the next slice.",
-              })
-            }
+            onClick={onGoogle}
+            disabled={googleLoading}
           >
             <svg className="mr-2 size-4" viewBox="0 0 24 24">
               <path
@@ -203,7 +267,7 @@ function AuthPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
               />
             </svg>
-            Continue with Google
+            {googleLoading ? "Opening Google..." : "Continue with Google"}
           </Button>
 
           <p className="mt-8 text-center text-sm text-muted-foreground">
@@ -220,4 +284,8 @@ function AuthPage() {
       </div>
     </div>
   );
+}
+
+function isSafeRedirect(value: string | undefined): value is string {
+  return !!value && value.startsWith("/") && !value.startsWith("//");
 }

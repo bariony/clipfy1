@@ -19,6 +19,7 @@ import { Route as AppNewRouteImport } from './routes/app.new'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.index'
 import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
+import { Route as ApiPublicRenderCallbackRouteImport } from './routes/api/public/render-callback'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/app.projects.$id.index'
 import { Route as AppProjectsIdClipsClipIdRouteImport } from './routes/app.projects.$id.clips.$clipId'
 
@@ -72,6 +73,11 @@ const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppProjectsRoute,
 } as any)
+const ApiPublicRenderCallbackRoute = ApiPublicRenderCallbackRouteImport.update({
+  id: '/api/public/render-callback',
+  path: '/api/public/render-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/new': typeof AppNewRoute
   '/app': typeof AppIndexRoute
+  '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/app/projects': typeof AppProjectsIndexRoute
   '/app/projects/$id': typeof AppProjectsIdIndexRoute
   '/app/projects/$id/clips/$clipId': typeof AppProjectsIdClipsClipIdRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/app/new': typeof AppNewRoute
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app/projects'
     | '/app/'
+    | '/api/public/render-callback'
     | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/app/dashboard'
     | '/app/new'
     | '/app'
+    | '/api/public/render-callback'
     | '/app/projects'
     | '/app/projects/$id'
     | '/app/projects/$id/clips/$clipId'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app/projects'
     | '/app/'
+    | '/api/public/render-callback'
     | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ApiPublicRenderCallbackRoute: typeof ApiPublicRenderCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdRouteImport
       parentRoute: typeof AppProjectsRoute
     }
+    '/api/public/render-callback': {
+      id: '/api/public/render-callback'
+      path: '/api/public/render-callback'
+      fullPath: '/api/public/render-callback'
+      preLoaderRoute: typeof ApiPublicRenderCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/projects/$id/': {
       id: '/app/projects/$id/'
       path: '/'
@@ -311,6 +331,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ApiPublicRenderCallbackRoute: ApiPublicRenderCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

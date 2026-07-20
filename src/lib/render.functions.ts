@@ -52,21 +52,21 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       throw new Error("Worker de render não configurado. Verifique RENDER_WORKER_URL e RENDER_WORKER_SECRET.");
     }
 
+    const [{ createHmac, randomUUID }, { getRequestUrl }] = await Promise.all([
+      import("crypto"),
+      import("@tanstack/react-start/server"),
+    ]);
+
+    const jobId = randomUUID();
     const outputPath = `${userId}/${project.id}/${clip.id}-${Date.now()}.mp4`;
-
-    // Signed PUT URL so the worker can upload the final MP4 without service-role key
-    const { data: uploadSigned, error: uploadErr } = await supabase.storage
-      .from("renders")
-      .createSignedUploadUrl(outputPath);
-    if (uploadErr) throw new Error(`upload url: ${uploadErr.message}`);
-
-    const signedUploadUrl =
-      uploadSigned?.signedUrl ??
-      (uploadSigned as { signedURL?: string } | null)?.signedURL ??
-      null;
-    if (!signedUploadUrl) {
-      throw new Error("Não foi possível gerar a URL segura de upload do MP4. Tente exportar novamente.");
-    }
+    const expires = Math.floor(Date.now() / 1000) + 60 * 60 * 6;
+    const signaturePayload = `${jobId}:${outputPath}:${expires}`;
+    const uploadSignature = createHmac("sha256", workerSecret).update(signaturePayload).digest("hex");
+    const uploadUrl = new URL("/api/public/render-upload", getRequestUrl().origin);
+    uploadUrl.searchParams.set("job_id", jobId);
+    uploadUrl.searchParams.set("path", outputPath);
+    uploadUrl.searchParams.set("expires", String(expires));
+    uploadUrl.searchParams.set("sig", uploadSignature);
 
     const edl = {
       version: 1,
@@ -74,8 +74,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       output: {
         bucket: "renders",
         path: outputPath,
-        upload_url: signedUploadUrl,
-        upload_token: uploadSigned?.token ?? null,
+        upload_url: uploadUrl.toString(),
         aspect_ratio:
           (project.preferences as { aspect_ratio?: string } | null)?.aspect_ratio ?? "9:16",
       },
@@ -98,6 +97,7 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
     const { data: job, error: insertErr } = await supabase
       .from("render_jobs")
       .insert({
+        id: jobId,
         user_id: userId,
         project_id: project.id,
         clip_id: clip.id,
@@ -121,7 +121,8 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
         const message = `Worker recusou o job (${res.status})${detail ? `: ${detail.slice(0, 180)}` : ""}`;
-        await supabase
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin
           .from("render_jobs")
           .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
           .eq("id", job.id);
@@ -129,7 +130,8 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao chamar worker de render";
-      await supabase
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
         .from("render_jobs")
         .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
         .eq("id", job.id);

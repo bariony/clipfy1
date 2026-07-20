@@ -224,8 +224,9 @@ export const transcribeProject = createServerFn({ method: "POST" })
     if (!project) throw new Error("Project not found");
     if (project.user_id !== userId) throw new Error("Forbidden");
 
-    const isYoutube = project.source === "youtube" && Boolean(project.source_url);
-    if (!isYoutube && !project.storage_path) throw new Error("Adicione um vídeo ou uma URL do YouTube antes de processar.");
+    const youtubeUrl = project.source === "youtube" ? project.source_url : null;
+    const storagePath = project.storage_path;
+    if (!youtubeUrl && !storagePath) throw new Error("Adicione um vídeo ou uma URL do YouTube antes de processar.");
 
     // Mark as transcribing
     const { error: markErr } = await supabase
@@ -235,8 +236,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
     if (markErr) throw new Error(markErr.message);
 
     try {
-      if (isYoutube) {
-        const youtubeTranscript = await fetchYoutubeTranscript(project.source_url!);
+      if (youtubeUrl) {
+        const youtubeTranscript = await fetchYoutubeTranscript(youtubeUrl);
         const clipCount = await saveTranscriptAndAnalyze({
           projectId: project.id,
           fullText: youtubeTranscript.text,
@@ -251,10 +252,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
         return { ok: true as const, characters: youtubeTranscript.text.length, clips: clipCount };
       }
 
+      if (!storagePath) throw new Error("Nenhum arquivo de vídeo anexado ao projeto.");
+
       // Create a short-lived signed URL to fetch the file from Storage
       const { data: signed, error: signErr } = await supabase.storage
         .from("videos")
-        .createSignedUrl(project.storage_path, 60);
+        .createSignedUrl(storagePath, 60);
       if (signErr || !signed?.signedUrl) throw new Error(signErr?.message || "Could not sign video URL");
 
       // Fetch file into memory
@@ -274,7 +277,7 @@ export const transcribeProject = createServerFn({ method: "POST" })
       }
 
       // Derive a filename with an audio/video extension the gateway will accept
-      const ext = project.storage_path.split(".").pop()?.toLowerCase() || "mp4";
+      const ext = storagePath.split(".").pop()?.toLowerCase() || "mp4";
       const filename = `project-${project.id}.${ext}`;
 
       // Send to Lovable AI Gateway (openai/gpt-4o-transcribe)

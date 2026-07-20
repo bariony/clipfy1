@@ -46,6 +46,12 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
     const templateSlug =
       (clip.metadata as { template_slug?: string } | null)?.template_slug ?? "hormozi-slam";
 
+    const workerUrl = process.env.RENDER_WORKER_URL;
+    const workerSecret = process.env.RENDER_WORKER_SECRET;
+    if (!workerUrl || !workerSecret) {
+      throw new Error("Worker de render não configurado. Verifique RENDER_WORKER_URL e RENDER_WORKER_SECRET.");
+    }
+
     const outputPath = `${userId}/${project.id}/${clip.id}-${Date.now()}.mp4`;
 
     // Signed PUT URL so the worker can upload the final MP4 without service-role key
@@ -54,14 +60,22 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       .createSignedUploadUrl(outputPath);
     if (uploadErr) throw new Error(`upload url: ${uploadErr.message}`);
 
+    const signedUploadUrl =
+      uploadSigned?.signedUrl ??
+      (uploadSigned as { signedURL?: string } | null)?.signedURL ??
+      null;
+    if (!signedUploadUrl) {
+      throw new Error("Não foi possível gerar a URL segura de upload do MP4. Tente exportar novamente.");
+    }
+
     const edl = {
       version: 1,
       source: { kind: project.source, url: sourceUrl },
       output: {
         bucket: "renders",
         path: outputPath,
-        upload_url: uploadSigned.signedUrl,
-        upload_token: uploadSigned.token,
+        upload_url: signedUploadUrl,
+        upload_token: uploadSigned?.token ?? null,
         aspect_ratio:
           (project.preferences as { aspect_ratio?: string } | null)?.aspect_ratio ?? "9:16",
       },
@@ -94,22 +108,32 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
       .single();
     if (insertErr) throw new Error(insertErr.message);
 
-    // Best-effort worker notification. Worker polls /api/public/render-next as fallback.
-    const workerUrl = process.env.RENDER_WORKER_URL;
-    const workerSecret = process.env.RENDER_WORKER_SECRET;
-    if (workerUrl && workerSecret) {
-      try {
-        await fetch(`${workerUrl.replace(/\/$/, "")}/jobs`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${workerSecret}`,
-          },
-          body: JSON.stringify({ job_id: job.id, edl }),
-        });
-      } catch (err) {
-        console.warn("[render] worker notify failed", err);
+    try {
+      const res = await fetch(`${workerUrl.replace(/\/$/, "")}/jobs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${workerSecret}`,
+        },
+        body: JSON.stringify({ job_id: job.id, edl }),
+      });
+
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        const message = `Worker recusou o job (${res.status})${detail ? `: ${detail.slice(0, 180)}` : ""}`;
+        await supabase
+          .from("render_jobs")
+          .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
+          .eq("id", job.id);
+        throw new Error(message);
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Falha ao chamar worker de render";
+      await supabase
+        .from("render_jobs")
+        .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
+        .eq("id", job.id);
+      throw new Error(message);
     }
 
     return { jobId: job.id };

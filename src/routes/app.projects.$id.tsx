@@ -14,9 +14,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/app/projects/$id")({
-  head: ({ loaderData }) => ({
-    meta: [{ title: loaderData?.title ? `${loaderData.title} — Clipfy` : "Project — Clipfy" }],
-  }),
+  head: () => ({ meta: [{ title: "Project — Clipfy" }] }),
   loader: async ({ params, context }) => {
     const project = await context.queryClient.ensureQueryData(projectQueryOptions(params.id));
     if (!project) throw notFound();

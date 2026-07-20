@@ -14,16 +14,384 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      caption_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          preview_url: string | null
+          slug: string
+          sort_order: number | null
+          style: Json
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          preview_url?: string | null
+          slug: string
+          sort_order?: number | null
+          style?: Json
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          preview_url?: string | null
+          slug?: string
+          sort_order?: number | null
+          style?: Json
+        }
+        Relationships: []
+      }
+      clip_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+          slug: string
+          sort_order: number | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+          slug: string
+          sort_order?: number | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
+      clips: {
+        Row: {
+          aspect_ratio: string | null
+          category_id: string | null
+          created_at: string
+          end_seconds: number
+          hook: string | null
+          id: string
+          metadata: Json | null
+          project_id: string
+          render_url: string | null
+          start_seconds: number
+          status: Database["public"]["Enums"]["clip_status"]
+          template_id: string | null
+          thumbnail_url: string | null
+          title: string
+          transcript_excerpt: string | null
+          updated_at: string
+          user_id: string
+          virality_score: number | null
+        }
+        Insert: {
+          aspect_ratio?: string | null
+          category_id?: string | null
+          created_at?: string
+          end_seconds: number
+          hook?: string | null
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          render_url?: string | null
+          start_seconds: number
+          status?: Database["public"]["Enums"]["clip_status"]
+          template_id?: string | null
+          thumbnail_url?: string | null
+          title: string
+          transcript_excerpt?: string | null
+          updated_at?: string
+          user_id: string
+          virality_score?: number | null
+        }
+        Update: {
+          aspect_ratio?: string | null
+          category_id?: string | null
+          created_at?: string
+          end_seconds?: number
+          hook?: string | null
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          render_url?: string | null
+          start_seconds?: number
+          status?: Database["public"]["Enums"]["clip_status"]
+          template_id?: string | null
+          thumbnail_url?: string | null
+          title?: string
+          transcript_excerpt?: string | null
+          updated_at?: string
+          user_id?: string
+          virality_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clips_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "clip_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clips_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clips_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "caption_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_transactions: {
+        Row: {
+          amount: number
+          balance_after: number | null
+          created_at: string
+          description: string | null
+          id: string
+          kind: Database["public"]["Enums"]["credit_kind"]
+          project_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["credit_kind"]
+          project_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["credit_kind"]
+          project_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_transactions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          credits: number
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          credits?: number
+          email?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          credits?: number
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          id: string
+          language: string | null
+          max_clip_seconds: number | null
+          min_clip_seconds: number | null
+          source: Database["public"]["Enums"]["project_source"]
+          source_url: string | null
+          status: Database["public"]["Enums"]["project_status"]
+          storage_path: string | null
+          target_clip_count: number | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          virality_bias: number | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          id?: string
+          language?: string | null
+          max_clip_seconds?: number | null
+          min_clip_seconds?: number | null
+          source?: Database["public"]["Enums"]["project_source"]
+          source_url?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+          storage_path?: string | null
+          target_clip_count?: number | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          virality_bias?: number | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          id?: string
+          language?: string | null
+          max_clip_seconds?: number | null
+          min_clip_seconds?: number | null
+          source?: Database["public"]["Enums"]["project_source"]
+          source_url?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+          storage_path?: string | null
+          target_clip_count?: number | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          virality_bias?: number | null
+        }
+        Relationships: []
+      }
+      transcripts: {
+        Row: {
+          created_at: string
+          full_text: string | null
+          id: string
+          language: string | null
+          project_id: string
+          provider: string | null
+          segments: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          full_text?: string | null
+          id?: string
+          language?: string | null
+          project_id: string
+          provider?: string | null
+          segments?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          full_text?: string | null
+          id?: string
+          language?: string | null
+          project_id?: string
+          provider?: string | null
+          segments?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transcripts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
+      clip_status: "suggested" | "rendering" | "ready" | "failed" | "discarded"
+      credit_kind:
+        | "bonus"
+        | "purchase"
+        | "consumption"
+        | "refund"
+        | "adjustment"
+      project_source: "upload" | "youtube" | "url"
+      project_status:
+        | "draft"
+        | "uploading"
+        | "transcribing"
+        | "analyzing"
+        | "ready"
+        | "failed"
+        | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +518,20 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+      clip_status: ["suggested", "rendering", "ready", "failed", "discarded"],
+      credit_kind: ["bonus", "purchase", "consumption", "refund", "adjustment"],
+      project_source: ["upload", "youtube", "url"],
+      project_status: [
+        "draft",
+        "uploading",
+        "transcribing",
+        "analyzing",
+        "ready",
+        "failed",
+        "archived",
+      ],
+    },
   },
 } as const

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useSuspenseQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Clapperboard, Trash2, Wand2, Youtube } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { ArrowLeft, Clapperboard, Sparkles, Trash2, Wand2, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
@@ -12,6 +13,8 @@ import {
   timeAgo,
 } from "@/lib/projects";
 import { supabase } from "@/integrations/supabase/client";
+import { transcribeProject } from "@/lib/transcribe.functions";
+
 
 export const Route = createFileRoute("/app/projects/$id")({
   head: () => ({ meta: [{ title: "Project — Clipfy" }] }),

@@ -24,7 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusPill } from "@/components/status-pill";
-import { projectClipsQueryOptions, projectQueryOptions, formatDuration, timeAgo } from "@/lib/projects";
+import { projectClipsQueryOptions, projectQueryOptions, formatDuration, timeAgo, type Clip } from "@/lib/projects";
 import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -504,7 +504,7 @@ function BriefPanel({ initialValue, saving, onSave }: { initialValue: string; sa
   );
 }
 
-function ClipsPanel({ clips }: { clips: Awaited<ReturnType<typeof projectClipsQueryOptions>> extends never ? never[] : Array<{ id: string; title: string; hook: string | null; start_seconds: number; end_seconds: number; virality_score: number | null }> }) {
+function ClipsPanel({ clips }: { clips: Clip[] }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">

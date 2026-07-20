@@ -1,0 +1,1 @@
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS preferences jsonb NOT NULL DEFAULT '{}'::jsonb;

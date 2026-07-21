@@ -45,6 +45,10 @@ PORT=3000
 # ou vários, um por linha ou separados por vírgula:
 # YTDLP_PROXIES=http://user:pass@proxy1:porta,http://user:pass@proxy2:porta
 # YTDLP_COOKIES_B64=<cookies.txt em base64 da conta operacional do Clipfy>
+# Diarização (pyannote CPU) — amarra fala↔rosto e resolve foco errado da câmera:
+# HF_TOKEN=hf_xxx  (crie em https://huggingface.co/settings/tokens
+#                   e aceite os termos em https://huggingface.co/pyannote/speaker-diarization-3.1
+#                   E em https://huggingface.co/pyannote/segmentation-3.0)
 ```
 
 > ⚠️ **RENDER_WORKER_SECRET** precisa ser IDÊNTICO ao do app. Como o Lovable

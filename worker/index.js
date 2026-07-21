@@ -774,7 +774,9 @@ async function processJob(job) {
       } catch (err) {
         app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
         // fallback simples: full no falante A com zoom padrão
-        const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, cxOf_static(speakerMap[sc.focus] || "left") - 304)}:0,scale=1080:1920,setsar=1`;
+        const fCol = speakerMap[sc.focus] || "left";
+        const fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;
+        const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, Math.min(1312, fCx - 304))}:0,scale=1080:1920,setsar=1`;
         await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgs]);
         sceneFiles.push(sceneFile);
       }

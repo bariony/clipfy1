@@ -800,9 +800,9 @@ async function processJob(job) {
     const track = await runFaceTracker(cutFile, 2);
     const cluster = clusterFaces(track);
     if (cluster) {
-      app.log.info({ cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w } }, "face tracker: clusters detectados");
+      app.log.info({ detector: track?.detector, cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w }, samples: track?.frames?.length }, "face tracker: clusters detectados");
     } else {
-      app.log.info("face tracker: sem clusters (fallback colunas)");
+      app.log.info({ detector: track?.detector }, "face tracker: sem clusters (fallback colunas)");
     }
     await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 

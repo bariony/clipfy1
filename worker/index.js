@@ -604,13 +604,11 @@ function clusterFaces(track) {
   }
   if (xs.length < 4) return null;
   xs.sort((a, b) => a - b);
-  // Se todos os rostos estão numa faixa estreita (<20% da largura), 1 cluster
   const span = xs[xs.length - 1] - xs[0];
   if (span < track.w * 0.18) {
     const mean = xs.reduce((s, v) => s + v, 0) / xs.length;
     return { single: mean, w: track.w, h: track.h };
   }
-  // Encontrar maior gap
   let gapIdx = 0, gapVal = 0;
   for (let i = 1; i < xs.length; i++) {
     const g = xs[i] - xs[i - 1];
@@ -622,58 +620,111 @@ function clusterFaces(track) {
   return { A: mean(left), B: mean(right), w: track.w, h: track.h };
 }
 
-// Para uma janela [t0, t1] (relativa ao cutFile), calcula o centro X da
-// face de foco dentro dessa janela — se não houver detecção suficiente,
-// cai pro cluster global.
-function focusCxInWindow(track, cluster, focusId, t0, t1) {
-  if (!track || !cluster) return null;
-  if (cluster.single !== undefined) return cluster.single;
-  const targetSide = focusId === "B" ? "B" : focusId === "C" ? "center" : "A";
-  const midX = (cluster.A + cluster.B) / 2;
-  const xs = [];
+// Foco data-driven: agrupa detecções da janela em bins de ~8% da largura,
+// pesa por área × score × contagem (rostos maiores e mais estáveis = foco),
+// e aplica suavização temporal com o cx da cena anterior pra não pipocar.
+// Retorna { cx } em pixels do vídeo ORIGINAL, ou null se sem detecções.
+function pickFocusCx(track, t0, t1, prevCx) {
+  if (!track || !track.frames || !track.w) return null;
+  const binSize = Math.max(1, track.w * 0.08);
+  const buckets = new Map();
   for (const f of track.frames) {
-    if (f.t < t0 || f.t > t1) continue;
-    for (const [x, , w] of f.faces || []) {
+    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    for (const [x, y, w, h, s] of f.faces || []) {
       const cx = x + w / 2;
-      if (targetSide === "A" && cx < midX) xs.push(cx);
-      else if (targetSide === "B" && cx >= midX) xs.push(cx);
-      else if (targetSide === "center") xs.push(cx);
+      const weight = (w * h) * (s ?? 0.5);
+      const key = Math.round(cx / binSize);
+      const b = buckets.get(key) || { sum: 0, wsum: 0, count: 0 };
+      b.sum += cx * weight; b.wsum += weight; b.count += 1;
+      buckets.set(key, b);
     }
   }
-  if (xs.length === 0) {
-    return targetSide === "B" ? cluster.B : targetSide === "center" ? midX : cluster.A;
+  if (buckets.size === 0) return null;
+  // Merge adjacent bins into groups
+  const keys = [...buckets.keys()].sort((a, b) => a - b);
+  const groups = [];
+  for (const k of keys) {
+    const b = buckets.get(k);
+    const last = groups[groups.length - 1];
+    if (last && k - last.lastK <= 1) {
+      last.sum += b.sum; last.wsum += b.wsum; last.count += b.count; last.lastK = k;
+    } else {
+      groups.push({ sum: b.sum, wsum: b.wsum, count: b.count, lastK: k });
+    }
   }
-  xs.sort((a, b) => a - b);
-  return xs[Math.floor(xs.length / 2)]; // mediana pra evitar outliers
+  let best = null;
+  for (const g of groups) {
+    const cx = g.sum / g.wsum;
+    // Score: massa visual × persistência temporal (log(count))
+    let score = g.wsum * Math.log(1 + g.count);
+    // Suavização: bônus leve se estiver perto do foco anterior (mesma pessoa)
+    if (prevCx != null) {
+      const dist = Math.abs(cx - prevCx) / track.w;
+      if (dist < 0.15) score *= 1.35;
+      else if (dist < 0.30) score *= 1.10;
+    }
+    if (!best || score > best.score) best = { cx, score };
+  }
+  return best ? { cx: best.cx } : null;
 }
 
-// Edição dinâmica por cena com centros de face REAIS (não mais colunas fixas).
+// Foco secundário: melhor grupo cuja distância do foco principal seja >= 20% da largura.
+function pickSecondaryCx(track, t0, t1, excludeCx) {
+  if (!track || !track.frames || !track.w) return null;
+  const minGap = track.w * 0.20;
+  let sum = 0, wsum = 0;
+  for (const f of track.frames) {
+    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    for (const [x, y, w, h, s] of f.faces || []) {
+      const cx = x + w / 2;
+      if (Math.abs(cx - excludeCx) < minGap) continue;
+      const weight = (w * h) * (s ?? 0.5);
+      sum += cx * weight; wsum += weight;
+    }
+  }
+  if (wsum <= 0) return null;
+  return { cx: sum / wsum };
+}
+
+
+// Edição dinâmica por cena com centros de face REAIS.
+// Estratégia: ignoramos os rótulos A/B do GPT (que erram na pessoa em cena)
+// e escolhemos o foco pela MASSA VISUAL da janela (área × score × contagem).
+// Suavizado com o foco da cena anterior pra não pipocar entre pessoas.
 function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const layout = String(scene?.layout || "full");
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
+  const t0 = scene.t;
+  const t1 = scene.t + scene.dur;
 
-  // Resolve centro X em pixels da NORMALIZAÇÃO (1920x1080) para um speaker id.
-  // Prioridade: face tracker → mapa de colunas → default.
-  const cxOf = (id, tWin) => {
-    if (ctx?.track && ctx?.cluster) {
-      const [t0, t1] = tWin || [scene.t, scene.t + scene.dur];
-      const raw = focusCxInWindow(ctx.track, ctx.cluster, id, t0, t1);
-      if (raw != null && ctx.track.w > 0) {
-        // reescala pra 1920 (largura normalizada)
-        return Math.round((raw / ctx.track.w) * 1920);
-      }
+  // 1) Face-driven focus (pixels normalizados 1920x1080)
+  let primaryCx = null, secondaryCx = null;
+  if (ctx?.track && ctx.track.w > 0) {
+    const p = pickFocusCx(ctx.track, t0, t1, ctx.prevCxRaw);
+    if (p) {
+      primaryCx = Math.round((p.cx / ctx.track.w) * 1920);
+      ctx.prevCxRaw = p.cx;
+      const s = pickSecondaryCx(ctx.track, t0, t1, p.cx);
+      if (s) secondaryCx = Math.round((s.cx / ctx.track.w) * 1920);
     }
-    const col = speakerMap[id] || speakerMap.A || "left";
+  }
+
+  // 2) Fallback pra mapa de colunas (quando o tracker não achou rostos)
+  const fallbackCx = (id) => {
+    const col = speakerMap?.[id] || speakerMap?.A || "left";
     return col === "left" ? 480 : col === "right" ? 1440 : 960;
   };
+  const primary = primaryCx ?? fallbackCx(scene.focus || "A");
+  const secondaryFallbackId =
+    scene.inset || scene.bottom || scene.right || ((scene.focus || "A") === "A" ? "B" : "A");
+  const secondary = secondaryCx ?? fallbackCx(secondaryFallbackId);
+
   const isVert = aw === 1080 && ah === 1920;
 
   if (isVert) {
     if (layout === "stack" || layout === "split") {
-      const topId = scene.top || scene.left || scene.focus || "A";
-      const botId = scene.bottom || scene.right || (topId === "A" ? "B" : "A");
-      const topX = Math.max(0, Math.min(840, cxOf(topId) - 540));
-      const botX = Math.max(0, Math.min(840, cxOf(botId) - 540));
+      const topX = Math.max(0, Math.min(840, primary - 540));
+      const botX = Math.max(0, Math.min(840, secondary - 540));
       return {
         complex: true,
         filter:
@@ -684,10 +735,8 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
       };
     }
     if (layout === "pip") {
-      const mainId = scene.focus || "A";
-      const insetId = scene.inset || (mainId === "A" ? "B" : "A");
-      const mainX = Math.max(0, Math.min(1312, cxOf(mainId) - 304));
-      const insX = Math.max(0, Math.min(1312, cxOf(insetId) - 304));
+      const mainX = Math.max(0, Math.min(1312, primary - 304));
+      const insX = Math.max(0, Math.min(1312, secondary - 304));
       return {
         complex: true,
         filter:
@@ -716,19 +765,18 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
         filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
       };
     }
-    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto REAL do falante
+    // full: zoom leve alternado sobre o rosto REAL do falante dominante
     const zoom = 1 + 0.06 * (i % 3);
     const sliceW = Math.max(320, Math.round(608 / zoom));
     const sliceH = Math.max(540, Math.round(1080 / zoom));
-    const focusId = scene.focus || "A";
-    const cxPx = cxOf(focusId);
-    const x = Math.max(0, Math.min(1920 - sliceW, cxPx - Math.round(sliceW / 2)));
+    const x = Math.max(0, Math.min(1920 - sliceW, primary - Math.round(sliceW / 2)));
     const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
       complex: false,
       filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
     };
   }
+
 
   return {
     complex: false,
@@ -991,10 +1039,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v9-yolo-face" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v10-focus-mass" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v9-yolo-face",
+  version: "youtube-rescue-v10-focus-mass",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

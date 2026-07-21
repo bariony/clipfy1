@@ -117,7 +117,7 @@ export function ClipCard({
         </div>
 
         {/* Overlay de status com barra de progresso */}
-        {!ready && (rendering || autoRender.isPending || renderJob === null) && (
+        {!ready && !failed && (rendering || autoRender.isPending || renderJob === null) && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-3 pt-10">
             <div className="flex items-center justify-between text-[11px] font-semibold text-white">
               <span className="flex items-center gap-1.5">
@@ -139,6 +139,19 @@ export function ClipCard({
             </div>
           </div>
         )}
+
+        {/* Overlay de falha */}
+        {failed && (
+          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/95 via-black/75 to-transparent px-3 pb-3 pt-10">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-destructive">
+              <AlertCircle className="size-3" />
+              Falha na renderização
+            </div>
+            {errorMsg && (
+              <p className="line-clamp-2 text-[10px] text-white/70">{errorMsg}</p>
+            )}
+          </div>
+        )}
       </div>
 
 
@@ -155,40 +168,64 @@ export function ClipCard({
           >
             <Edit3 className="size-3.5" />
           </Button>
-          <Button
-            size="sm"
-            className="flex-1 font-bold"
-            disabled={!ready || !downloadUrl}
-            onClick={async () => {
-              if (!downloadUrl) return;
-              try {
-                const res = await fetch(downloadUrl);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `clipfy-${clip.id}.mp4`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-              } catch {
-                window.open(downloadUrl, "_blank");
-              }
-            }}
-          >
-            {ready ? (
-              <>
-                <Download className="mr-1.5 size-3.5" /> Baixar MP4
-              </>
-            ) : (
-              <>
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
-              </>
-            )}
-          </Button>
+          {failed ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 border-destructive/40 bg-transparent font-bold text-destructive hover:bg-destructive/10"
+              disabled={autoRender.isPending}
+              onClick={() => {
+                kickedRef.current = true;
+                autoRender.mutate();
+              }}
+            >
+              {autoRender.isPending ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" /> Reenviando…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-1.5 size-3.5" /> Tentar de novo
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="flex-1 font-bold"
+              disabled={!ready || !downloadUrl}
+              onClick={async () => {
+                if (!downloadUrl) return;
+                try {
+                  const res = await fetch(downloadUrl);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `clipfy-${clip.id}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch {
+                  window.open(downloadUrl, "_blank");
+                }
+              }}
+            >
+              {ready ? (
+                <>
+                  <Download className="mr-1.5 size-3.5" /> Baixar MP4
+                </>
+              ) : (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
+
     </div>
   );
 }

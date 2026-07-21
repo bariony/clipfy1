@@ -200,7 +200,7 @@ function AuthPage() {
                         redirectTo: `${window.location.origin}/reset-password`,
                       });
                       if (error) toast.error(error.message);
-                      else toast.success("Reset link sent");
+                      else void 0;
                     }}
                   >
                     Forgot?

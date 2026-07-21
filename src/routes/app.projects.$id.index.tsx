@@ -249,8 +249,7 @@ function ProjectWorkspace() {
     if (!project) return;
     if (
       project.status === "analyzing" ||
-      project.status === "ready" ||
-      project.status === "completed"
+      project.status === "ready"
     ) {
       qc.invalidateQueries({ queryKey: ["projects", id, "clips"] });
       qc.invalidateQueries({ queryKey: ["transcript", id] });

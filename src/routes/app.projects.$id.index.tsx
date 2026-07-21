@@ -69,13 +69,15 @@ export const Route = createFileRoute("/app/projects/$id/")({
 });
 
 function ProjectWorkspace() {
-  const { id } = Route.useParams();
+  const { id: idOrSlug } = Route.useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data: project } = useSuspenseQuery(projectQueryOptions(id));
+  const { data: project } = useSuspenseQuery(projectQueryOptions(idOrSlug));
+  const id = project?.id ?? idOrSlug;
   const { data: clips } = useSuspenseQuery(projectClipsQueryOptions(id));
   const { data: transcript } = useSuspenseQuery(transcriptQueryOptions(id));
+
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);

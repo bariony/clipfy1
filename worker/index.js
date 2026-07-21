@@ -12,6 +12,8 @@ import { request as undiciRequest } from "undici";
 import Groq from "groq-sdk";
 import { buildReframePlan } from "./reframe.js";
 
+const WORKER_VERSION = "sprint1a-debug-evidence";
+
 const {
   PORT = "8080",
   RENDER_WORKER_SECRET,

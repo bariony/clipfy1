@@ -1084,13 +1084,40 @@ async function processJob(job) {
     }
     await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 
+    // 2.6. Diarização (pyannote CPU) — descobre QUEM fala QUANDO, e amarra
+    // cada speaker ao rosto que mais aparece na tela enquanto ele fala.
+    // Isso é o que faz a câmera parar de apontar pra pessoa errada.
+    let diar = null;
+    try {
+      const wavPath = path.join(jobDir, "audio.wav");
+      await extractAudioForDiarize(cutFile, wavPath);
+      const diarResult = await runDiarizer(wavPath);
+      if (diarResult?.turns?.length && track?.w) {
+        const speakerCentroids = computeSpeakerCentroids(track, diarResult.turns);
+        diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids };
+        app.log.info({
+          speakers: diarResult.speakers,
+          turns: diarResult.turns.length,
+          centroids: Object.fromEntries(
+            Object.entries(speakerCentroids).map(([k, v]) => [k, { cx: Math.round(v.cx), count: v.count }])
+          ),
+        }, "diarize: fala↔rosto amarrados");
+      } else if (diarResult?.turns?.length) {
+        // Diarizou mas sem tracker — ainda serve pra saber quem fala (não pra focar).
+        diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids: {} };
+      }
+    } catch (err) {
+      app.log.warn({ err: err?.message }, "diarização crashou (segue sem)");
+    }
+    await sendCallback({ job_id, status: "processing", progress: 55, worker_id: WORKER_ID });
+
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
     // cadência automática alternando full/broll com zoom para dar vida.
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+    const sceneCtx = { track, cluster, diar, totalScenes: 1, multiCount: 0, lastWasMulti: false };
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes

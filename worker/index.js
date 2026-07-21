@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdir, rm, readFile, writeFile, stat } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import fs, { createReadStream } from "node:fs";
 import path from "node:path";
 import { request as undiciRequest } from "undici";
 import Groq from "groq-sdk";

@@ -624,7 +624,7 @@ function clusterFaces(track) {
 // pesa por área × score × contagem (rostos maiores e mais estáveis = foco),
 // e aplica suavização temporal com o cx da cena anterior pra não pipocar.
 // Retorna { cx } em pixels do vídeo ORIGINAL, ou null se sem detecções.
-function faceGroupsInWindow(track, t0, t1, prevCx) {
+function faceGroupsInWindow(track, t0, t1, prevCx, diar) {
   if (!track || !track.frames || !track.w) return null;
   const binSize = Math.max(1, track.w * 0.075);
   const buckets = new Map();
@@ -651,38 +651,54 @@ function faceGroupsInWindow(track, t0, t1, prevCx) {
     }
   }
   if (buckets.size === 0) return null;
-  // Merge adjacent bins into groups
   const keys = [...buckets.keys()].sort((a, b) => a - b);
   const groups = [];
   for (const k of keys) {
     const b = buckets.get(k);
     const last = groups[groups.length - 1];
     if (last && k - last.lastK <= 1) {
-      last.sumX += b.sumX;
-      last.sumY += b.sumY;
-      last.sumW += b.sumW;
-      last.sumH += b.sumH;
-      last.wsum += b.wsum;
-      last.count += b.count;
+      last.sumX += b.sumX; last.sumY += b.sumY;
+      last.sumW += b.sumW; last.sumH += b.sumH;
+      last.wsum += b.wsum; last.count += b.count;
       for (const frame of b.frames) last.frames.add(frame);
       last.lastK = k;
     } else {
       groups.push({ ...b, lastK: k });
     }
   }
+
+  // Diarização: quem fala nesta janela e quanto tempo cada um fala?
+  // active = [{speaker, talk}] ordenado por tempo falado desc.
+  const active = diar?.turns ? activeSpeakersInWindow(diar.turns, t0, t1) : null;
+  const dominantSpeaker = active?.[0]?.speaker;
+  const dominantCentroid = dominantSpeaker ? diar?.speakerCentroids?.[dominantSpeaker] : null;
+  const secondarySpeaker = active?.[1]?.speaker;
+  const secondaryCentroid = secondarySpeaker ? diar?.speakerCentroids?.[secondarySpeaker] : null;
+
   const result = groups
     .filter((g) => g.wsum > 0)
     .map((g) => {
       const cx = g.sumX / g.wsum;
       const cy = g.sumY / g.wsum;
       const coverage = sampledFrames > 0 ? g.frames.size / sampledFrames : 0;
-    // Score: massa visual × persistência temporal (log(count))
       let score = g.wsum * Math.log(1 + g.count) * (0.6 + Math.min(1, coverage));
-    // Suavização: bônus leve se estiver perto do foco anterior (mesma pessoa)
       if (prevCx != null) {
         const dist = Math.abs(cx - prevCx) / track.w;
         if (dist < 0.15) score *= 1.35;
         else if (dist < 0.30) score *= 1.10;
+      }
+      // *** DIARIZATION BIAS ***
+      // Foco vai pra quem está FALANDO agora, não pra quem só é mais visível.
+      if (dominantCentroid != null) {
+        const dSpk = Math.abs(cx - dominantCentroid) / track.w;
+        if (dSpk < 0.12) score *= 2.4;      // é o falante dominante
+        else if (dSpk < 0.22) score *= 1.4;
+        else score *= 0.55;                  // não é quem está falando — penaliza
+      }
+      // Segundo falante (usado em stack/split) — bônus menor pra manter distinto.
+      if (secondaryCentroid != null) {
+        const dSec = Math.abs(cx - secondaryCentroid) / track.w;
+        if (dSec < 0.12) score *= 1.15;
       }
       return { cx, cy, score, coverage, w: g.sumW / g.wsum, h: g.sumH / g.wsum };
     })
@@ -691,10 +707,113 @@ function faceGroupsInWindow(track, t0, t1, prevCx) {
   return result.length ? result : null;
 }
 
-function pickFocusCx(track, t0, t1, prevCx) {
-  const best = faceGroupsInWindow(track, t0, t1, prevCx)?.[0];
+function pickFocusCx(track, t0, t1, prevCx, diar) {
+  const best = faceGroupsInWindow(track, t0, t1, prevCx, diar)?.[0];
   return best ? { cx: best.cx } : null;
 }
+
+// -------------------- DIARIZATION HELPERS --------------------
+// Quanto tempo cada speaker fala dentro de [t0,t1] (em segundos).
+function activeSpeakersInWindow(turns, t0, t1) {
+  if (!Array.isArray(turns) || turns.length === 0) return null;
+  const tally = new Map();
+  for (const tr of turns) {
+    const s = Math.max(t0, tr.start);
+    const e = Math.min(t1, tr.end);
+    if (e <= s) continue;
+    tally.set(tr.speaker, (tally.get(tr.speaker) || 0) + (e - s));
+  }
+  if (tally.size === 0) return null;
+  return [...tally.entries()]
+    .map(([speaker, talk]) => ({ speaker, talk }))
+    .sort((a, b) => b.talk - a.talk);
+}
+
+// Pra cada speaker, encontra o rosto que aparece MAIS TEMPO nas janelas em que
+// ele está falando. É o mapa fala→rosto que resolve "câmera aponta pra pessoa errada".
+function computeSpeakerCentroids(track, turns) {
+  if (!track || !track.frames || !turns?.length) return {};
+  const perSpeakerBins = new Map(); // speaker -> Map(binKey -> {sumX, sumY, wsum, count})
+  const binSize = Math.max(1, track.w * 0.075);
+  // Index turns por buckets de 0.5s pra lookup rápido
+  const turnBuckets = new Map();
+  for (const t of turns) {
+    const s = Math.floor(t.start * 2), e = Math.ceil(t.end * 2);
+    for (let k = s; k <= e; k++) {
+      const arr = turnBuckets.get(k) || [];
+      arr.push(t);
+      turnBuckets.set(k, arr);
+    }
+  }
+  const speakerAt = (time) => {
+    const k = Math.round(time * 2);
+    const cands = turnBuckets.get(k);
+    if (!cands) return null;
+    for (const t of cands) if (time >= t.start && time <= t.end) return t.speaker;
+    return null;
+  };
+  for (const f of track.frames) {
+    const speaker = speakerAt(f.t);
+    if (!speaker) continue;
+    let bins = perSpeakerBins.get(speaker);
+    if (!bins) { bins = new Map(); perSpeakerBins.set(speaker, bins); }
+    for (const [x, y, w, h, s] of f.faces || []) {
+      if (w <= 0 || h <= 0) continue;
+      const cx = x + w / 2, cy = y + h / 2;
+      const weight = (w * h) * Math.max(0.1, s ?? 0.5);
+      const key = Math.round(cx / binSize);
+      const b = bins.get(key) || { sumX: 0, sumY: 0, wsum: 0, count: 0 };
+      b.sumX += cx * weight; b.sumY += cy * weight;
+      b.wsum += weight; b.count += 1;
+      bins.set(key, b);
+    }
+  }
+  const centroids = {};
+  for (const [speaker, bins] of perSpeakerBins) {
+    // Pega bin dominante (maior massa)
+    let best = null;
+    for (const b of bins.values()) if (!best || b.wsum > best.wsum) best = b;
+    if (best && best.wsum > 0) {
+      centroids[speaker] = { cx: best.sumX / best.wsum, cy: best.sumY / best.wsum, count: best.count };
+    }
+  }
+  return centroids;
+}
+
+// Extrai áudio mono 16k pra diarização.
+async function extractAudioForDiarize(cutFile, wavPath) {
+  await sh("ffmpeg", ["-y", "-i", cutFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath]);
+}
+
+// Roda diarize.py; retorna {turns, speakers} ou null.
+async function runDiarizer(wavPath) {
+  if (!process.env.HF_TOKEN && !process.env.HUGGINGFACE_TOKEN) {
+    app.log.info("diarize: HF_TOKEN ausente, pulando");
+    return null;
+  }
+  try {
+    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "diarize.py");
+    const out = await new Promise((resolve, reject) => {
+      const p = spawn("python3", [script, wavPath], { stdio: ["ignore", "pipe", "pipe"] });
+      let so = "", se = "";
+      p.stdout.on("data", (d) => (so += d.toString()));
+      p.stderr.on("data", (d) => (se += d.toString()));
+      p.on("error", reject);
+      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`diarize exit ${code}: ${se.slice(0, 300)}`))));
+    });
+    const data = JSON.parse(out);
+    if (data.error) {
+      app.log.warn({ err: data.error }, "diarização falhou (fallback sem speaker awareness)");
+      return null;
+    }
+    if (!Array.isArray(data.turns) || data.turns.length === 0) return null;
+    return data;
+  } catch (err) {
+    app.log.warn({ err: err?.message }, "diarize.py crashou (fallback)");
+    return null;
+  }
+}
+
 
 // Foco secundário: melhor grupo cuja distância do foco principal seja >= 20% da largura.
 function pickSecondaryCx(track, t0, t1, excludeCx) {
@@ -810,7 +929,7 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   let secondaryFace = null;
   let extraFaces = [];
   if (ctx?.track && ctx.track.w > 0) {
-    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw);
+    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw, ctx.diar);
     const primaryGroup = groups?.[0];
     if (primaryGroup) {
       ctx.prevCxRaw = primaryGroup.cx;
@@ -965,13 +1084,40 @@ async function processJob(job) {
     }
     await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 
+    // 2.6. Diarização (pyannote CPU) — descobre QUEM fala QUANDO, e amarra
+    // cada speaker ao rosto que mais aparece na tela enquanto ele fala.
+    // Isso é o que faz a câmera parar de apontar pra pessoa errada.
+    let diar = null;
+    try {
+      const wavPath = path.join(jobDir, "audio.wav");
+      await extractAudioForDiarize(cutFile, wavPath);
+      const diarResult = await runDiarizer(wavPath);
+      if (diarResult?.turns?.length && track?.w) {
+        const speakerCentroids = computeSpeakerCentroids(track, diarResult.turns);
+        diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids };
+        app.log.info({
+          speakers: diarResult.speakers,
+          turns: diarResult.turns.length,
+          centroids: Object.fromEntries(
+            Object.entries(speakerCentroids).map(([k, v]) => [k, { cx: Math.round(v.cx), count: v.count }])
+          ),
+        }, "diarize: fala↔rosto amarrados");
+      } else if (diarResult?.turns?.length) {
+        // Diarizou mas sem tracker — ainda serve pra saber quem fala (não pra focar).
+        diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids: {} };
+      }
+    } catch (err) {
+      app.log.warn({ err: err?.message }, "diarização crashou (segue sem)");
+    }
+    await sendCallback({ job_id, status: "processing", progress: 55, worker_id: WORKER_ID });
+
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
     // cadência automática alternando full/broll com zoom para dar vida.
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+    const sceneCtx = { track, cluster, diar, totalScenes: 1, multiCount: 0, lastWasMulti: false };
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes
@@ -1042,7 +1188,7 @@ async function processJob(job) {
         // fallback: full centrado no rosto real (se tracker rodou) ou coluna
         let fCx = 480;
         if (track?.w) {
-          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw);
+          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw, sceneCtx.diar);
           if (raw?.cx != null) fCx = Math.round((raw.cx / track.w) * 1920);
         } else {
           const fCol = speakerMap[sc.focus] || "left";
@@ -1154,10 +1300,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v10-focus-mass" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v11-diarize" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v10-focus-mass",
+  version: "youtube-rescue-v11-diarize",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

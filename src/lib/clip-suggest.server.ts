@@ -17,6 +17,8 @@ type ClipCandidate = {
   score_reason?: string;
 };
 
+const LEGACY_LLM_TIMEOUT_MS = 45_000;
+
 function textToSyntheticSegments(fullText: string): Seg[] {
   const sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [fullText];
   return sentences
@@ -162,6 +164,8 @@ export async function generateAndSaveClipSuggestions({
       .join("\n")
       .slice(0, 18000);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LEGACY_LLM_TIMEOUT_MS);
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -193,7 +197,8 @@ Regras profissionais:
           },
         ],
       }),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
 
     if (aiResp.ok) {
       const payload = (await aiResp.json()) as { choices?: Array<{ message?: { content?: string } }> };

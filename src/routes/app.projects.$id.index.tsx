@@ -692,7 +692,7 @@ function UploadDropzone({
       <Upload className="mb-3 size-6 text-muted-foreground" />
       <div className="text-sm font-semibold">Solte o vídeo aqui ou clique para escolher</div>
       <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        MP4 · MOV · WEBM · MKV — até 500MB
+        MP4 · MOV · WEBM · MKV — até 2GB
       </div>
     </label>
   );

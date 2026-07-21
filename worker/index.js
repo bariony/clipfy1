@@ -54,6 +54,7 @@ async function callback(payload, targetUrl = `${APP_URL}/api/public/render-callb
   const signature = createHmac("sha256", RENDER_WORKER_SECRET).update(body).digest("hex");
   const finalStatus = payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled";
   const maxAttempts = finalStatus ? 10 : 4;
+  const timeoutMs = finalStatus ? 600000 : 60000;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -62,8 +63,8 @@ async function callback(payload, targetUrl = `${APP_URL}/api/public/render-callb
         method: "POST",
         headers: { "content-type": "application/json", "x-render-signature": signature },
         body,
-        headersTimeout: 60000,
-        bodyTimeout: 60000,
+        headersTimeout: timeoutMs,
+        bodyTimeout: timeoutMs,
       });
       if (res.statusCode < 300) return true;
       const txt = await res.body.text();

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   formatDuration,
   isRenderJobStuck,
+  isSupersededRenderJob,
   latestRenderJobQueryOptions,
   type Clip,
   type TranscriptSegment,
@@ -36,10 +37,11 @@ export function ClipCard({
   const qc = useQueryClient();
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
   const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
+  const superseded = renderJob ? isSupersededRenderJob(renderJob) : false;
   const ready = Boolean(downloadUrl) && (clip.status === "ready" || renderJob?.status === "completed");
-  const stuck = !ready && renderJob ? isRenderJobStuck(renderJob) : false;
-  const rendering = !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
-  const failed = !ready && (renderJob?.status === "failed" || stuck);
+  const stuck = !ready && renderJob && !superseded ? isRenderJobStuck(renderJob) : false;
+  const rendering = !superseded && !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
+  const failed = !ready && !superseded && (renderJob?.status === "failed" || stuck);
   const score = clip.virality_score;
 
   const perClipTemplate = (clip.metadata as { template_slug?: string } | null)?.template_slug;
@@ -63,14 +65,14 @@ export function ClipCard({
     if (kickedRef.current) return;
     if (ready) return;
     if (renderJob === undefined) return; // ainda carregando
-    if (renderJob === null || stuck) {
+    if (renderJob === null || superseded || stuck) {
       kickedRef.current = true;
       autoRender.mutate();
     }
-  }, [renderJob, stuck, ready, autoRender]);
+  }, [renderJob, superseded, stuck, ready, autoRender]);
 
   const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
-  const errorMsg = renderJob?.error_message ?? null;
+  const errorMsg = superseded ? null : renderJob?.error_message ?? null;
   const statusLabel = failed
     ? "Falha na renderização"
     : renderJob?.status === "processing"

@@ -105,8 +105,8 @@ export async function enqueueRenderForClip({
   await supabase
     .from("render_jobs")
     .update({
-      status: "failed",
-      error_message: "Substituído por novo render.",
+      status: "cancelled",
+      error_message: null,
       completed_at: new Date().toISOString(),
     })
     .eq("clip_id", clip.id)

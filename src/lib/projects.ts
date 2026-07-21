@@ -12,10 +12,23 @@ export type RenderJob = Database["public"]["Tables"]["render_jobs"]["Row"];
 
 export type TranscriptSegment = { text: string; start: number; end: number };
 
+export function isSupersededRenderJob(job: Pick<RenderJob, "status" | "error_message">) {
+  return (
+    job.status === "cancelled" ||
+    /substitu[ií]do por novo render/i.test(job.error_message ?? "")
+  );
+}
+
 export function isRenderJobStuck(job: Pick<RenderJob, "status" | "created_at" | "updated_at" | "progress">) {
-  if (job.status !== "queued" && job.status !== "processing") return false;
-  const reference = job.progress > 0 ? job.updated_at : job.created_at;
-  return Date.now() - new Date(reference).getTime() > 90_000;
+  if (job.status === "queued") {
+    return Date.now() - new Date(job.created_at).getTime() > 8 * 60_000;
+  }
+  if (job.status === "processing") {
+    const reference = job.progress > 0 ? job.updated_at : job.created_at;
+    const limit = job.progress >= 80 ? 30 * 60_000 : 20 * 60_000;
+    return Date.now() - new Date(reference).getTime() > limit;
+  }
+  return false;
 }
 
 export const latestRenderJobQueryOptions = (clipId: string) =>
@@ -30,6 +43,7 @@ export const latestRenderJobQueryOptions = (clipId: string) =>
         .limit(1)
         .maybeSingle();
       if (error) throw error;
+      if (data && isSupersededRenderJob(data)) return null;
       return data;
     },
     refetchInterval: (query) => {

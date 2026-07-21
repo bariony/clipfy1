@@ -53,6 +53,8 @@ const CLIFF_PAT = /(mas\s+tem\s+um\s+detalhe|foi\s+a[íi]\s+que|depois\s+acontec
 const CLOSURE_PAT = /(foi\s+por\s+isso|ent[aã]o\s+essa\s+foi|no\s+final|por\s+isso\s+eu|essa\s+é\s+a\s+li[cç][aã]o|resumindo|conclus[ãa]o|moral\s+da\s+hist[oó]ria|em\s+resumo|resultado\s+final)/i;
 const OPENER_PAT = /(vou\s+contar|vou\s+explicar|teve\s+uma\s+vez|existe\s+uma\s+coisa|o\s+problema\s+[eé]|deixa\s+eu\s+te\s+contar|imagina\s+o\s+seguinte|isso\s+aconteceu|voc[eê]\s+sabia)/i;
 const LIST_PAT = /(tr[eê]s\s+(motivos|raz[oõ]es|coisas|pontos)|dois\s+(motivos|pontos)|quatro\s+(motivos|pontos)|primeiro[,\s]|segundo[,\s]|terceiro[,\s]|em\s+primeiro\s+lugar)/i;
+const SCE_MODEL = "openai/gpt-4o-mini";
+const SCE_LLM_TIMEOUT_MS = 25_000;
 
 export function normalizeSentences(segments: Seg[]): Sentence[] {
   if (!segments?.length) return [];
@@ -113,6 +115,8 @@ export type Topic = {
 };
 
 async function callLovableAi(apiKey: string, body: object): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCE_LLM_TIMEOUT_MS);
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -121,7 +125,8 @@ async function callLovableAi(apiKey: string, body: object): Promise<string> {
       "X-Lovable-AIG-SDK": "raw",
     },
     body: JSON.stringify(body),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
   if (!resp.ok) throw new Error(`LLM ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
   const payload = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return payload.choices?.[0]?.message?.content ?? "";
@@ -139,7 +144,7 @@ export async function detectTopics(sentences: Sentence[], apiKey: string, brief:
   // Compacta pra caber no contexto — mostra ~600 sentenças com t0.
   const timeline = sentences.slice(0, 600).map((s) => `[${s.idx}|${Math.round(s.t0)}s] ${s.text}`).join("\n").slice(0, 22000);
   const raw = await callLovableAi(apiKey, {
-    model: "openai/gpt-5.5",
+    model: SCE_MODEL,
     response_format: { type: "json_object" },
     messages: [
       {
@@ -197,7 +202,7 @@ export async function extractBeats(
     return { topic: t, preview };
   });
   const raw = await callLovableAi(apiKey, {
-    model: "openai/gpt-5.5",
+    model: SCE_MODEL,
     response_format: { type: "json_object" },
     messages: [
       {
@@ -351,7 +356,7 @@ export async function scoreClips(
   brief: string | null,
 ): Promise<Array<{ scores: NonNullable<SceClip["story_score"]>; title: string; hook: string; reason: string }>> {
   const raw = await callLovableAi(apiKey, {
-    model: "openai/gpt-5.5",
+    model: SCE_MODEL,
     response_format: { type: "json_object" },
     messages: [
       {

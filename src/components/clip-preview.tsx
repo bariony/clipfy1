@@ -136,6 +136,47 @@ export function ClipPreview({
 
   const showIdlePoster = source === "upload" ? !hovering && autoPlayOnHover : false;
 
+  // Modo "final render": exibe o MP4 já processado (legenda/edição embutidas).
+  if (renderedUrl) {
+    return (
+      <div
+        onMouseEnter={() => autoPlayOnHover && setHovering(true)}
+        onMouseLeave={() => autoPlayOnHover && setHovering(false)}
+        className={cn(
+          "relative w-full overflow-hidden rounded-xl border border-border bg-black",
+          aspectClass,
+          className,
+        )}
+      >
+        <video
+          src={renderedUrl}
+          className="h-full w-full object-cover"
+          playsInline
+          muted
+          loop
+          preload="metadata"
+          autoPlay={autoPlayOnHover && hovering}
+          controls={!autoPlayOnHover}
+          ref={(el) => {
+            if (!el || !autoPlayOnHover) return;
+            if (hovering) el.play().catch(() => {});
+            else {
+              el.pause();
+              el.currentTime = 0;
+            }
+          }}
+        />
+        {showPlayButton && autoPlayOnHover && !hovering && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+            <span className="grid size-12 place-items-center rounded-full bg-black/60 backdrop-blur">
+              <Play className="ml-0.5 size-6 text-white" />
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       onMouseEnter={() => autoPlayOnHover && setHovering(true)}
@@ -175,10 +216,8 @@ export function ClipPreview({
         <div className="grid h-full place-items-center text-xs text-muted-foreground">URL inválida</div>
       )}
 
-      {/* Captions */}
       <CaptionOverlay words={words} currentTime={currentTime} style={template} />
 
-      {/* Idle play glyph */}
       {showPlayButton && showIdlePoster && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <span className="grid size-12 place-items-center rounded-full bg-black/60 backdrop-blur">

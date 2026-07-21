@@ -26,25 +26,21 @@ function buildTimeline(segments: Seg[], startSec: number): string {
     .slice(0, 4000);
 }
 
-/** Fallback: alterna full/split a cada ~5s se o GPT falhar. */
+/** Fallback conservador: full por padrão. Dividir sem contexto piora o corte. */
 function fallbackScenePlan(duration: number): ScenePlan {
   const scenes: SceneStep[] = [];
-  const step = 5;
+  const step = 6;
   let t = 0;
-  let toggle = 0;
   while (t < duration) {
     const dur = Math.min(step, duration - t);
     scenes.push({
       t,
       dur,
-      layout: toggle % 2 === 0 ? "full" : "split",
+      layout: "full",
       focus: "A",
-      left: "A",
-      right: "B",
-      beat: "auto",
+      beat: "safe-full",
     });
     t += dur;
-    toggle++;
   }
   return {
     speakers: [
@@ -105,6 +101,32 @@ function coerceScenePlan(
     .sort((a, b) => a.t - b.t);
   if (scenes.length === 0) return null;
 
+  // Pós-processamento conservador: a IA pode exagerar em split/stack/quad.
+  // Divisão é exceção; nunca em sequência; máximo ~25% das cenas.
+  const multiLayouts = new Set<SceneStep["layout"]>(["split", "stack", "pip", "quad"]);
+  const maxMulti = Math.max(1, Math.floor(scenes.length * 0.25));
+  let multiCount = 0;
+  let previousWasMulti = false;
+  for (const sc of scenes) {
+    const isMulti = multiLayouts.has(sc.layout);
+    if (!isMulti) {
+      previousWasMulti = false;
+      continue;
+    }
+    const hasSecond = Boolean(sc.right || sc.bottom || sc.inset || (Array.isArray(sc.grid) && sc.grid.length > 1));
+    if (previousWasMulti || multiCount >= maxMulti || !hasSecond) {
+      sc.layout = "full";
+      sc.right = undefined;
+      sc.bottom = undefined;
+      sc.inset = undefined;
+      sc.grid = undefined;
+      previousWasMulti = false;
+      continue;
+    }
+    multiCount++;
+    previousWasMulti = true;
+  }
+
   const speakers: Speaker[] = (obj.speakers ?? [])
     .filter((s) => s && s.id)
     .slice(0, 6)
@@ -143,15 +165,19 @@ async function generateScenePlanForClip(params: {
   // Sem transcrição: retorna fallback direto
   if (!timeline) return fallbackScenePlan(duration);
 
-  const system = `Você é o diretor de edição do Clipfy. Analisa um corte curto (${duration.toFixed(1)}s) e planeja uma edição dinâmica ponta-a-ponta como um editor profissional (estilo Opus Clip / MrBeast / podcasts virais).
+  const system = `Você é o diretor de edição do Clipfy. Analisa um corte curto (${duration.toFixed(1)}s) e planeja uma edição dinâmica ponta-a-ponta como um editor profissional. Regra central: NÃO faça layout dividido por variedade. Se não houver motivo claro, use full.
 
 REGRAS:
 - Infira falantes a partir do texto (mudanças de tom, "eu", "você", vocativos, perguntas/respostas). Rotule como A, B, C… se houver múltiplos.
-- Divida o corte em CENAS de 2-6 segundos que ALTERNAM layout para manter energia visual.
+- Divida o corte em CENAS de 3-7 segundos, mas o layout padrão é sempre "full".
 - Layouts disponíveis: "full" (foco em 1), "split" (2 lado a lado), "stack" (2 empilhados, MELHOR para podcasts horizontais em 9:16), "pip" (1 grande + inset), "quad" (4), "broll" (voz + gráfico).
-- Para diálogos/podcasts com 2 pessoas, prefira "stack" em vez de "split" quando o material original for horizontal; lado-a-lado em 9:16 costuma cortar rostos.
-- Reaja aos beats: em GRITARIA/POLÊMICA use "stack" mostrando reações; em RISADA use "quad" ou "pip"; em MONOLOGO calmo use "full" com foco no falante.
-- Se só há 1 falante detectado: alterne "full" (crop no rosto) com "broll" ocasional; NÃO invente split.
+- Use "stack", "split", "pip" ou "quad" SOMENTE quando o conteúdo pede mostrar reação/contraste real: duas pessoas falando ao mesmo tempo, pergunta/resposta muito clara, risada/reação de outra pessoa, confronto, grupo reagindo, ou uma ação visual envolvendo mais de uma pessoa.
+- NÃO use layout dividido em monólogo, explicação, frase curta, transição, ou só para "dar dinâmica".
+- Para diálogos/podcasts horizontais, se realmente precisar dividir, prefira "stack"; mas a maioria das cenas deve continuar "full" no falante/ação principal.
+- Se só há 1 falante detectado: use apenas "full". NÃO invente split, stack, pip ou quad.
+- Em uma cena dividida, os participantes devem ser semanticamente diferentes; nunca planeje duas janelas para o mesmo falante ou a mesma ação.
+- Limite layouts divididos a no máximo 25% das cenas. Nunca use layout dividido em cenas consecutivas.
+- Reaja aos beats com foco e zoom/full antes de dividir tela. Dividir é exceção, não padrão.
 - Cenas contíguas (a próxima t = t anterior + dur anterior). Última cena termina em duration.
 - Responda SOMENTE JSON válido no formato: {"speakers":[{"id":"A","label":"Host"}],"scenes":[{"t":0,"dur":3.2,"layout":"full","focus":"A","beat":"intro"}]}`;
 

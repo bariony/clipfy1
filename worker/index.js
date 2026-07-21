@@ -624,18 +624,29 @@ function clusterFaces(track) {
 // pesa por área × score × contagem (rostos maiores e mais estáveis = foco),
 // e aplica suavização temporal com o cx da cena anterior pra não pipocar.
 // Retorna { cx } em pixels do vídeo ORIGINAL, ou null se sem detecções.
-function pickFocusCx(track, t0, t1, prevCx) {
+function faceGroupsInWindow(track, t0, t1, prevCx) {
   if (!track || !track.frames || !track.w) return null;
-  const binSize = Math.max(1, track.w * 0.08);
+  const binSize = Math.max(1, track.w * 0.075);
   const buckets = new Map();
+  let sampledFrames = 0;
   for (const f of track.frames) {
     if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    sampledFrames++;
+    const frameKey = Math.round(f.t * 10);
     for (const [x, y, w, h, s] of f.faces || []) {
+      if (w <= 0 || h <= 0) continue;
       const cx = x + w / 2;
-      const weight = (w * h) * (s ?? 0.5);
+      const cy = y + h / 2;
+      const weight = (w * h) * Math.max(0.1, s ?? 0.5);
       const key = Math.round(cx / binSize);
-      const b = buckets.get(key) || { sum: 0, wsum: 0, count: 0 };
-      b.sum += cx * weight; b.wsum += weight; b.count += 1;
+      const b = buckets.get(key) || { sumX: 0, sumY: 0, sumW: 0, sumH: 0, wsum: 0, count: 0, frames: new Set() };
+      b.sumX += cx * weight;
+      b.sumY += cy * weight;
+      b.sumW += w * weight;
+      b.sumH += h * weight;
+      b.wsum += weight;
+      b.count += 1;
+      b.frames.add(frameKey);
       buckets.set(key, b);
     }
   }
@@ -647,43 +658,140 @@ function pickFocusCx(track, t0, t1, prevCx) {
     const b = buckets.get(k);
     const last = groups[groups.length - 1];
     if (last && k - last.lastK <= 1) {
-      last.sum += b.sum; last.wsum += b.wsum; last.count += b.count; last.lastK = k;
+      last.sumX += b.sumX;
+      last.sumY += b.sumY;
+      last.sumW += b.sumW;
+      last.sumH += b.sumH;
+      last.wsum += b.wsum;
+      last.count += b.count;
+      for (const frame of b.frames) last.frames.add(frame);
+      last.lastK = k;
     } else {
-      groups.push({ sum: b.sum, wsum: b.wsum, count: b.count, lastK: k });
+      groups.push({ ...b, lastK: k });
     }
   }
-  let best = null;
-  for (const g of groups) {
-    const cx = g.sum / g.wsum;
+  const result = groups
+    .filter((g) => g.wsum > 0)
+    .map((g) => {
+      const cx = g.sumX / g.wsum;
+      const cy = g.sumY / g.wsum;
+      const coverage = sampledFrames > 0 ? g.frames.size / sampledFrames : 0;
     // Score: massa visual × persistência temporal (log(count))
-    let score = g.wsum * Math.log(1 + g.count);
+      let score = g.wsum * Math.log(1 + g.count) * (0.6 + Math.min(1, coverage));
     // Suavização: bônus leve se estiver perto do foco anterior (mesma pessoa)
-    if (prevCx != null) {
-      const dist = Math.abs(cx - prevCx) / track.w;
-      if (dist < 0.15) score *= 1.35;
-      else if (dist < 0.30) score *= 1.10;
-    }
-    if (!best || score > best.score) best = { cx, score };
-  }
+      if (prevCx != null) {
+        const dist = Math.abs(cx - prevCx) / track.w;
+        if (dist < 0.15) score *= 1.35;
+        else if (dist < 0.30) score *= 1.10;
+      }
+      return { cx, cy, score, coverage, w: g.sumW / g.wsum, h: g.sumH / g.wsum };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  return result.length ? result : null;
+}
+
+function pickFocusCx(track, t0, t1, prevCx) {
+  const best = faceGroupsInWindow(track, t0, t1, prevCx)?.[0];
   return best ? { cx: best.cx } : null;
 }
 
 // Foco secundário: melhor grupo cuja distância do foco principal seja >= 20% da largura.
 function pickSecondaryCx(track, t0, t1, excludeCx) {
-  if (!track || !track.frames || !track.w) return null;
-  const minGap = track.w * 0.20;
-  let sum = 0, wsum = 0;
-  for (const f of track.frames) {
-    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
-    for (const [x, y, w, h, s] of f.faces || []) {
-      const cx = x + w / 2;
-      if (Math.abs(cx - excludeCx) < minGap) continue;
-      const weight = (w * h) * (s ?? 0.5);
-      sum += cx * weight; wsum += weight;
-    }
+  const groups = faceGroupsInWindow(track, t0, t1, null);
+  const primary = groups?.find((g) => Math.abs(g.cx - excludeCx) < track.w * 0.12) ?? groups?.[0];
+  const secondary = distinctFaceGroups(groups, primary, track?.w, 0.26)[0];
+  return secondary ? { cx: secondary.cx, cy: secondary.cy, score: secondary.score } : null;
+}
+
+function distinctFaceGroups(groups, primary, trackW, minGapRatio = 0.26) {
+  if (!Array.isArray(groups) || !primary || !trackW) return [];
+  const minGap = trackW * minGapRatio;
+  const minScore = primary.score * 0.28;
+  return groups.filter(
+    (g) =>
+      Math.abs(g.cx - primary.cx) >= minGap &&
+      g.score >= minScore &&
+      g.coverage >= 0.25,
+  );
+}
+
+function normalizedFace(group, track) {
+  if (!group || !track?.w || !track?.h) return null;
+  return {
+    cx: Math.round((group.cx / track.w) * 1920),
+    cy: Math.round((group.cy / track.h) * 1080),
+    score: group.score,
+    coverage: group.coverage,
+  };
+}
+
+function cropX(cx, width) {
+  return Math.max(0, Math.min(1920 - width, Math.round(cx - width / 2)));
+}
+
+function cropYForFace(cy, height) {
+  return Math.max(0, Math.min(1080 - height, Math.round(cy - height * 0.34)));
+}
+
+function fullFocusFilter(norm, primary, sceneIndex) {
+  const cx = primary?.cx ?? 960;
+  const zoom = 1 + 0.045 * (sceneIndex % 3);
+  const sliceW = Math.max(360, Math.round(608 / zoom));
+  const sliceH = Math.max(720, Math.round(1080 / zoom));
+  const x = cropX(cx, sliceW);
+  const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
+  return `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`;
+}
+
+function stackFilter(norm, primary, secondary) {
+  const tileW = 760;
+  const tileH = 675;
+  const topX = cropX(primary.cx, tileW);
+  const botX = cropX(secondary.cx, tileW);
+  const topY = cropYForFace(primary.cy, tileH);
+  const botY = cropYForFace(secondary.cy, tileH);
+  return (
+    `[0:v]${norm},split=2[a][b];` +
+    `[a]crop=${tileW}:${tileH}:${topX}:${topY},scale=1080:960,setsar=1[top];` +
+    `[b]crop=${tileW}:${tileH}:${botX}:${botY},scale=1080:960,setsar=1[bot];` +
+    `[top][bot]vstack=inputs=2[v]`
+  );
+}
+
+function pipFilter(norm, primary, secondary) {
+  const mainW = 608;
+  const insetW = 760;
+  const insetH = 675;
+  const mainX = cropX(primary.cx, mainW);
+  const insX = cropX(secondary.cx, insetW);
+  const insY = cropYForFace(secondary.cy, insetH);
+  return (
+    `[0:v]${norm},split=2[m][i];` +
+    `[m]crop=${mainW}:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
+    `[i]crop=${insetW}:${insetH}:${insX}:${insY},scale=420:374,setsar=1[inset];` +
+    `[main][inset]overlay=x=W-w-36:y=132[v]`
+  );
+}
+
+function quadFilter(norm, people) {
+  const tileW = 760;
+  const tileH = 675;
+  const filters = people.slice(0, 4).map((p, idx) => {
+    const inLabel = String.fromCharCode(97 + idx);
+    return `[${inLabel}]crop=${tileW}:${tileH}:${cropX(p.cx, tileW)}:${cropYForFace(p.cy, tileH)},scale=540:960,setsar=1[q${idx + 1}]`;
+  });
+  while (filters.length < 4) {
+    const idx = filters.length;
+    const inLabel = String.fromCharCode(97 + idx);
+    const p = people[idx % people.length];
+    filters.push(`[${inLabel}]crop=${tileW}:${tileH}:${cropX(p.cx, tileW)}:${cropYForFace(p.cy, tileH)},scale=540:960,setsar=1[q${idx + 1}]`);
   }
-  if (wsum <= 0) return null;
-  return { cx: sum / wsum };
+  return (
+    `[0:v]${norm},split=4[a][b][c][d];` +
+    `${filters.join(";")};` +
+    `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`
+  );
 }
 
 
@@ -692,20 +800,25 @@ function pickSecondaryCx(track, t0, t1, excludeCx) {
 // e escolhemos o foco pela MASSA VISUAL da janela (área × score × contagem).
 // Suavizado com o foco da cena anterior pra não pipocar entre pessoas.
 function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
-  const layout = String(scene?.layout || "full");
+  const requestedLayout = String(scene?.layout || "full");
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
   const t0 = scene.t;
   const t1 = scene.t + scene.dur;
 
   // 1) Face-driven focus (pixels normalizados 1920x1080)
-  let primaryCx = null, secondaryCx = null;
+  let primaryFace = null;
+  let secondaryFace = null;
+  let extraFaces = [];
   if (ctx?.track && ctx.track.w > 0) {
-    const p = pickFocusCx(ctx.track, t0, t1, ctx.prevCxRaw);
-    if (p) {
-      primaryCx = Math.round((p.cx / ctx.track.w) * 1920);
-      ctx.prevCxRaw = p.cx;
-      const s = pickSecondaryCx(ctx.track, t0, t1, p.cx);
-      if (s) secondaryCx = Math.round((s.cx / ctx.track.w) * 1920);
+    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw);
+    const primaryGroup = groups?.[0];
+    if (primaryGroup) {
+      ctx.prevCxRaw = primaryGroup.cx;
+      primaryFace = normalizedFace(primaryGroup, ctx.track);
+      extraFaces = distinctFaceGroups(groups, primaryGroup, ctx.track.w, 0.26)
+        .map((g) => normalizedFace(g, ctx.track))
+        .filter(Boolean);
+      secondaryFace = extraFaces[0] ?? null;
     }
   }
 
@@ -714,72 +827,70 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
     const col = speakerMap?.[id] || speakerMap?.A || "left";
     return col === "left" ? 480 : col === "right" ? 1440 : 960;
   };
-  const primary = primaryCx ?? fallbackCx(scene.focus || "A");
+  const primary = primaryFace ?? { cx: fallbackCx(scene.focus || "A"), cy: 430, score: 1, coverage: 1 };
   const secondaryFallbackId =
     scene.inset || scene.bottom || scene.right || ((scene.focus || "A") === "A" ? "B" : "A");
-  const secondary = secondaryCx ?? fallbackCx(secondaryFallbackId);
+  const secondary = secondaryFace ?? { cx: fallbackCx(secondaryFallbackId), cy: 430, score: 0, coverage: 0 };
+  const distinctEnough = Math.abs(primary.cx - secondary.cx) >= 1920 * 0.26;
+  const hasRealSecondary = Boolean(secondaryFace && distinctEnough);
+  const multiRequested = ["stack", "split", "pip", "quad"].includes(requestedLayout);
+  const maxMulti = Math.max(1, Math.floor((ctx?.totalScenes ?? 1) * 0.25));
+  const multiBudgetLeft = (ctx?.multiCount ?? 0) < maxMulti;
+  const allowMultiNow = multiRequested && hasRealSecondary && multiBudgetLeft && !ctx?.lastWasMulti && scene.dur >= 2.2;
+  let layout = requestedLayout;
+
+  // Se não existe segunda pessoa visualmente distinta, não divide a tela.
+  // Full correto é melhor que stack/split duplicado ou sem contexto.
+  if (layout === "broll") layout = "full";
+  if (["stack", "split", "pip"].includes(layout) && !allowMultiNow) layout = "full";
+  if (layout === "quad" && (!allowMultiNow || extraFaces.length < 2)) layout = "full";
 
   const isVert = aw === 1080 && ah === 1920;
 
   if (isVert) {
     if (layout === "stack" || layout === "split") {
-      const topX = Math.max(0, Math.min(840, primary - 540));
-      const botX = Math.max(0, Math.min(840, secondary - 540));
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=2[a][b];` +
-          `[a]crop=1080:960:${topX}:60,setsar=1[top];` +
-          `[b]crop=1080:960:${botX}:60,setsar=1[bot];` +
-          `[top][bot]vstack=inputs=2[v]`,
+        layout,
+        requestedLayout,
+        filter: stackFilter(norm, primary, secondary),
       };
     }
     if (layout === "pip") {
-      const mainX = Math.max(0, Math.min(1312, primary - 304));
-      const insX = Math.max(0, Math.min(1312, secondary - 304));
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=2[m][i];` +
-          `[m]crop=608:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
-          `[i]crop=608:1080:${insX}:0,scale=360:640,setsar=1[inset];` +
-          `[main][inset]overlay=x=W-w-40:y=120[v]`,
+        layout,
+        requestedLayout,
+        filter: pipFilter(norm, primary, secondary),
       };
     }
     if (layout === "quad") {
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=4[a][b][c][d];` +
-          `[a]crop=960:540:0:0,scale=540:960,setsar=1[q1];` +
-          `[b]crop=960:540:960:0,scale=540:960,setsar=1[q2];` +
-          `[c]crop=960:540:0:540,scale=540:960,setsar=1[q3];` +
-          `[d]crop=960:540:960:540,scale=540:960,setsar=1[q4];` +
-          `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`,
+        layout,
+        requestedLayout,
+        filter: quadFilter(norm, [primary, ...extraFaces].slice(0, 4)),
       };
     }
-    if (layout === "broll") {
-      const frames = Math.max(30, Math.round((scene.dur || 3) * 30));
-      return {
-        complex: false,
-        filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
-      };
-    }
+    if (layout === "broll") layout = "full";
+    if (ctx) ctx.lastWasMulti = false;
     // full: zoom leve alternado sobre o rosto REAL do falante dominante
-    const zoom = 1 + 0.06 * (i % 3);
-    const sliceW = Math.max(320, Math.round(608 / zoom));
-    const sliceH = Math.max(540, Math.round(1080 / zoom));
-    const x = Math.max(0, Math.min(1920 - sliceW, primary - Math.round(sliceW / 2)));
-    const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
       complex: false,
-      filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
+      layout: "full",
+      requestedLayout,
+      filter: fullFocusFilter(norm, primary, i),
     };
   }
 
 
   return {
     complex: false,
+    layout: "full",
+    requestedLayout,
     filter: `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah},setsar=1`,
   };
 }
@@ -860,7 +971,7 @@ async function processJob(job) {
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster };
+    const sceneCtx = { track, cluster, totalScenes: 1, multiCount: 0, lastWasMulti: false };
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes
@@ -897,11 +1008,15 @@ async function processJob(job) {
         i++;
       }
     }
+    sceneCtx.totalScenes = plannedScenes.length;
 
     const sceneFiles = [];
     for (let i = 0; i < plannedScenes.length; i++) {
       const sc = plannedScenes[i];
       const vf = buildSceneFilter(sc, i, aw, ah, speakerMap, sceneCtx);
+      if (vf.requestedLayout && vf.layout && vf.requestedLayout !== vf.layout) {
+        app.log.info({ scene: i, from: vf.requestedLayout, to: vf.layout }, "layout dividido bloqueado: sem pessoas distintas suficientes");
+      }
       const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
       const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
       const encArgs = [
@@ -926,9 +1041,9 @@ async function processJob(job) {
         app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
         // fallback: full centrado no rosto real (se tracker rodou) ou coluna
         let fCx = 480;
-        if (cluster) {
-          const raw = focusCxInWindow(track, cluster, sc.focus || "A", sc.t, sc.t + sc.dur);
-          if (raw != null && track.w > 0) fCx = Math.round((raw / track.w) * 1920);
+        if (track?.w) {
+          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw);
+          if (raw?.cx != null) fCx = Math.round((raw.cx / track.w) * 1920);
         } else {
           const fCol = speakerMap[sc.focus] || "left";
           fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;

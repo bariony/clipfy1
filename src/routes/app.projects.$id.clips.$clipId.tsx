@@ -359,10 +359,26 @@ function ClipEditor() {
             Salvar
           </Button>
           {renderReady && downloadUrl ? (
-            <Button asChild className="rounded-lg font-bold">
-              <a href={downloadUrl} download target="_blank" rel="noreferrer">
-                <Download className="mr-2 size-4" /> Baixar MP4
-              </a>
+            <Button
+              className="rounded-lg font-bold"
+              onClick={async () => {
+                try {
+                  const res = await fetch(downloadUrl);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `clipfy-${clip.id}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch {
+                  window.open(downloadUrl, "_blank");
+                }
+              }}
+            >
+              <Download className="mr-2 size-4" /> Baixar MP4
             </Button>
           ) : (
             <Button

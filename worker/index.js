@@ -307,23 +307,38 @@ async function transcribeAudioFile(audioFile, language, offset = 0) {
   }
 
   let tr;
-  try {
-    tr = await groq.audio.transcriptions.create({
-      file: createReadStream(audioFile),
-      model: "whisper-large-v3-turbo",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment", "word"],
-      language: language && language !== "auto" ? language : undefined,
-    });
-  } catch (err) {
-    const msg = String(err?.message ?? err);
-    if (/413|request entity too large|request_too_large/i.test(msg)) {
-      throw new Error(
-        `Groq recusou o chunk por tamanho (${Math.round(audioStat.size / 1024 / 1024)}MB). O worker vai precisar de chunks menores; erro original: ${msg.slice(0, 220)}`,
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      tr = await groq.audio.transcriptions.create({
+        file: createReadStream(audioFile),
+        model: "whisper-large-v3-turbo",
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment", "word"],
+        language: language && language !== "auto" ? language : undefined,
+      });
+      break;
+    } catch (err) {
+      const msg = String(err?.message ?? err);
+      if (/413|request entity too large|request_too_large/i.test(msg)) {
+        throw new Error(
+          `Groq recusou o chunk por tamanho (${Math.round(audioStat.size / 1024 / 1024)}MB). O worker vai precisar de chunks menores; erro original: ${msg.slice(0, 220)}`,
+        );
+      }
+      const status = err?.status ?? err?.response?.status;
+      const transient =
+        /ECONNRESET|ETIMEDOUT|ENETUNREACH|EAI_AGAIN|socket hang up|Connection error|fetch failed|network|timeout/i.test(msg) ||
+        status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+      if (!transient || attempt === maxAttempts) throw err;
+      const delay = Math.min(30000, 1000 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 500);
+      app.log.warn(
+        { attempt, delay_ms: delay, status, message: msg.slice(0, 200) },
+        "groq transient error; retrying chunk",
       );
+      await new Promise((r) => setTimeout(r, delay));
     }
-    throw err;
   }
+
 
   const words = normalizeWords(tr.words, offset);
   const segments = normalizeSegments(tr.segments, words, offset);

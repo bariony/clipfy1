@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronUp, Loader2, Save, Sparkles } from "lucide-r
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CaptionPresetCard } from "@/components/caption-preset-card";
 import { ClipPreview } from "@/components/clip-preview";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   type LayoutMode,
 } from "@/lib/caption-templates";
 import type { TranscriptSegment } from "@/lib/projects";
+
 
 type Props = {
   projectId: string;
@@ -182,27 +184,22 @@ export function StylePanel({
             </div>
           </Section>
 
-          <Section title="Legenda animada">
-            <div className="grid grid-cols-2 gap-2">
+          <Section
+            title="Legenda animada"
+            hint={`${CAPTION_TEMPLATES.length} presets · preview real ao vivo`}
+          >
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {CAPTION_TEMPLATES.map((tpl) => (
-                <button
+                <CaptionPresetCard
                   key={tpl.slug}
-                  type="button"
-                  onClick={() => setTemplate(tpl.slug)}
-                  className={cn(
-                    "flex flex-col items-start rounded-xl border p-3 text-left transition-colors",
-                    template === tpl.slug ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/40",
-                  )}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span className="text-sm font-bold">{tpl.name}</span>
-                    {template === tpl.slug && <Check className="size-4 text-primary" />}
-                  </div>
-                  <span className="mt-0.5 text-[11px] text-muted-foreground">{tpl.description}</span>
-                </button>
+                  template={tpl}
+                  selected={template === tpl.slug}
+                  onSelect={() => setTemplate(tpl.slug)}
+                />
               ))}
             </div>
           </Section>
+
 
           <div className="flex justify-end gap-2">
             <Button
@@ -220,11 +217,15 @@ export function StylePanel({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{title}</div>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{title}</div>
+        {hint && <div className="font-mono text-[10px] text-muted-foreground/70">{hint}</div>}
+      </div>
       {children}
     </div>
   );
 }
+

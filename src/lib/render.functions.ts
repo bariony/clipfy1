@@ -64,12 +64,15 @@ export const enqueueClipRender = createServerFn({ method: "POST" })
     const signaturePayload = `${jobId}:${outputPath}:${expires}`;
     const uploadSignature = createHmac("sha256", workerSecret).update(signaturePayload).digest("hex");
     const requestOrigin = getRequestUrl().origin;
-    const uploadUrl = new URL("/api/public/render-upload", requestOrigin);
+    const publicOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(requestOrigin)
+      ? "https://clipfy1.lovable.app"
+      : requestOrigin;
+    const uploadUrl = new URL("/api/public/render-upload", publicOrigin);
     uploadUrl.searchParams.set("job_id", jobId);
     uploadUrl.searchParams.set("path", outputPath);
     uploadUrl.searchParams.set("expires", String(expires));
     uploadUrl.searchParams.set("sig", uploadSignature);
-    const callbackUrl = new URL("/api/public/render-callback", requestOrigin);
+    const callbackUrl = new URL("/api/public/render-callback", publicOrigin);
 
     const edl = {
       version: 1,

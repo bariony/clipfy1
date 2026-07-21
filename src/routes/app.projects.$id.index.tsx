@@ -400,6 +400,7 @@ function ProjectWorkspace() {
                   segments={segments}
                   templateSlug={templateSlug}
                   onEdit={() => setEditingClip(clip)}
+                />
               ))}
             </div>
           </div>

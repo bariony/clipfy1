@@ -142,7 +142,29 @@ export async function generateAndSaveClipSuggestions({
     metadata: { generated_by: "clipfy-mvp" } as never,
   }));
 
-  const { error } = await supabase.from("clips").insert(rows);
+  const { data: inserted, error } = await supabase
+    .from("clips")
+    .insert(rows)
+    .select("id, start_seconds, end_seconds, transcript_excerpt");
   if (error) throw new Error(error.message);
+
+  // Segunda passada: gera scene_plan (edição dinâmica) pra cada clipe.
+  // Erros aqui não invalidam os clips — o plano é enriquecimento opcional.
+  try {
+    const { generateScenePlansForClips } = await import("./scene-plan.server");
+    await generateScenePlansForClips({
+      supabase,
+      clips: (inserted ?? []).map((c) => ({
+        id: c.id,
+        startSeconds: Number(c.start_seconds),
+        endSeconds: Number(c.end_seconds),
+      })),
+      segments,
+      apiKey,
+    });
+  } catch (err) {
+    console.warn("[scene-plan] geração falhou (não bloqueia clips):", err);
+  }
+
   return rows.length;
 }

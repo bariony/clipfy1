@@ -552,33 +552,99 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   return header + events;
 }
 
-function scenePlanWantsMultiCam(edl, aspect) {
-  const layout = edl.layout;
-  const scenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
-  const hasMultiScene = scenes.some((s) => ["split", "stack", "pip", "quad"].includes(String(s.layout)));
-  return aspect === "9:16" && (layout === "split-v" || layout === "split-h" || (layout === "auto" && hasMultiScene));
+function speakerColumnMap(edl) {
+  const speakers = Array.isArray(edl.scene_plan?.speakers) ? edl.scene_plan.speakers : [];
+  const cols = ["left", "right", "center"];
+  const map = {};
+  speakers.forEach((s, i) => {
+    if (s?.id && i < 3) map[String(s.id)] = cols[i];
+  });
+  if (!map.A) map.A = "left";
+  if (!map.B) map.B = "right";
+  if (!map.C) map.C = "center";
+  return map;
 }
 
-function buildReframeFilter(edl, aw, ah) {
-  const aspect = edl.output?.aspect_ratio ?? "9:16";
-  if (scenePlanWantsMultiCam(edl, aspect)) {
-    const topH = Math.floor(ah / 2);
-    const bottomH = ah - topH;
+// Edição dinâmica por cena: recorta enquadramento de acordo com o layout
+// planejado (full/stack/pip/quad/broll) e o falante em foco. Como a fonte é
+// horizontal (podcast/YouTube), mapeamos cada falante para uma metade da tela
+// (A=esquerda, B=direita, C=centro) e cortamos em torno do rosto dele.
+function buildSceneFilter(scene, i, aw, ah, speakerMap) {
+  const layout = String(scene?.layout || "full");
+  const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
+  const cxOf = (id) => {
+    const col = speakerMap[id] || speakerMap.A || "left";
+    return col === "left" ? 480 : col === "right" ? 1440 : 960;
+  };
+  const isVert = aw === 1080 && ah === 1920;
+
+  if (isVert) {
+    if (layout === "stack" || layout === "split") {
+      const topId = scene.top || scene.left || scene.focus || "A";
+      const botId = scene.bottom || scene.right || (topId === "A" ? "B" : "A");
+      const topX = Math.max(0, Math.min(840, cxOf(topId) - 540));
+      const botX = Math.max(0, Math.min(840, cxOf(botId) - 540));
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=2[a][b];` +
+          `[a]crop=1080:960:${topX}:60,setsar=1[top];` +
+          `[b]crop=1080:960:${botX}:60,setsar=1[bot];` +
+          `[top][bot]vstack=inputs=2[v]`,
+      };
+    }
+    if (layout === "pip") {
+      const mainId = scene.focus || "A";
+      const insetId = scene.inset || (mainId === "A" ? "B" : "A");
+      const mainX = Math.max(0, Math.min(1312, cxOf(mainId) - 304));
+      const insX = Math.max(0, Math.min(1312, cxOf(insetId) - 304));
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=2[m][i];` +
+          `[m]crop=608:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
+          `[i]crop=608:1080:${insX}:0,scale=360:640,setsar=1[inset];` +
+          `[main][inset]overlay=x=W-w-40:y=120[v]`,
+      };
+    }
+    if (layout === "quad") {
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=4[a][b][c][d];` +
+          `[a]crop=960:540:0:0,scale=540:960,setsar=1[q1];` +
+          `[b]crop=960:540:960:0,scale=540:960,setsar=1[q2];` +
+          `[c]crop=960:540:0:540,scale=540:960,setsar=1[q3];` +
+          `[d]crop=960:540:960:540,scale=540:960,setsar=1[q4];` +
+          `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`,
+      };
+    }
+    if (layout === "broll") {
+      const frames = Math.max(30, Math.round((scene.dur || 3) * 30));
+      return {
+        complex: false,
+        filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
+      };
+    }
+    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto do falante
+    const zoom = 1 + 0.06 * (i % 3);
+    const sliceW = Math.max(320, Math.round(608 / zoom));
+    const sliceH = Math.max(540, Math.round(1080 / zoom));
+    const focusId = scene.focus || "A";
+    const x = Math.max(0, Math.min(1920 - sliceW, cxOf(focusId) - Math.round(sliceW / 2)));
+    const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
-      complex: true,
-      filter:
-        `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,split=2[leftSrc][rightSrc];` +
-        `[leftSrc]crop=iw*0.54:ih:0:0,scale=${aw}:${topH}:force_original_aspect_ratio=increase,crop=${aw}:${topH}[top];` +
-        `[rightSrc]crop=iw*0.54:ih:iw*0.46:0,scale=${aw}:${bottomH}:force_original_aspect_ratio=increase,crop=${aw}:${bottomH}[bottom];` +
-        `[top][bottom]vstack=inputs=2[v]`,
+      complex: false,
+      filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
     };
   }
 
   return {
     complex: false,
-    filter: `scale=iw*max(${aw}/iw\,${ah}/ih):ih*max(${aw}/iw\,${ah}/ih),crop=${aw}:${ah}`,
+    filter: `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah},setsar=1`,
   };
 }
+
 
 async function transcribeIfNeeded(sourceFile, existingSegments, language) {
   const hasWords = Array.isArray(existingSegments) && existingSegments.some((s) => Array.isArray(s.words) && s.words.length > 0);
@@ -638,25 +704,100 @@ async function processJob(job) {
     ]);
     await sendCallback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
 
-    // 3. Reframe aspect ratio. Para podcast horizontal em Shorts, quando há
-    // múltiplos falantes, usa stack top/bottom em vez de crop central vazio.
+    // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
+    // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
+    // cadência automática alternando full/broll com zoom para dar vida.
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
-    const framedFile = path.join(jobDir, "framed.mp4");
-    const vf = buildReframeFilter(edl, aw, ah);
-    if (vf.complex) {
-      await sh("ffmpeg", [
-        "-y", "-i", cutFile,
-        "-filter_complex", vf.filter,
-        "-map", "[v]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "copy",
-        framedFile,
-      ]);
-    } else {
-      await sh("ffmpeg", ["-y", "-i", cutFile, "-vf", vf.filter, "-c:a", "copy", framedFile]);
+    const speakerMap = speakerColumnMap(edl);
+
+    let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
+    plannedScenes = plannedScenes
+      .map((s) => ({
+        t: Math.max(0, Number(s?.t) || 0),
+        dur: Math.max(0.4, Number(s?.dur) || 0),
+        layout: s?.layout,
+        focus: s?.focus,
+        left: s?.left,
+        right: s?.right,
+        top: s?.top,
+        bottom: s?.bottom,
+        inset: s?.inset,
+      }))
+      .filter((s) => s.t < duration)
+      .map((s) => ({ ...s, dur: Math.min(s.dur, Math.max(0.4, duration - s.t)) }))
+      .sort((a, b) => a.t - b.t);
+
+    if (plannedScenes.length === 0) {
+      // Cadência automática: cenas de ~3.5s alternando full (foco A/B) e broll
+      const step = 3.5;
+      let t = 0;
+      let i = 0;
+      while (t < duration) {
+        const d = Math.min(step, duration - t);
+        const mode = i % 4;
+        plannedScenes.push({
+          t,
+          dur: d,
+          layout: mode === 3 ? "broll" : "full",
+          focus: mode % 2 === 0 ? "A" : "B",
+        });
+        t += d;
+        i++;
+      }
     }
+
+    const sceneFiles = [];
+    for (let i = 0; i < plannedScenes.length; i++) {
+      const sc = plannedScenes[i];
+      const vf = buildSceneFilter(sc, i, aw, ah, speakerMap);
+      const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
+      const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
+      const encArgs = [
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+        "-r", "30", "-pix_fmt", "yuv420p",
+        sceneFile,
+      ];
+      try {
+        if (vf.complex) {
+          await sh("ffmpeg", [
+            ...baseArgs,
+            "-filter_complex", vf.filter,
+            "-map", "[v]", "-map", "0:a?",
+            ...encArgs,
+          ]);
+        } else {
+          await sh("ffmpeg", [...baseArgs, "-vf", vf.filter, ...encArgs]);
+        }
+        sceneFiles.push(sceneFile);
+      } catch (err) {
+        app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
+        // fallback simples: full no falante A com zoom padrão
+        const fCol = speakerMap[sc.focus] || "left";
+        const fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;
+        const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, Math.min(1312, fCx - 304))}:0,scale=1080:1920,setsar=1`;
+        await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgs]);
+        sceneFiles.push(sceneFile);
+      }
+    }
+
+    const concatList = path.join(jobDir, "concat.txt");
+    await writeFile(
+      concatList,
+      sceneFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
+      "utf8",
+    );
+    const framedFile = path.join(jobDir, "framed.mp4");
+    await sh("ffmpeg", [
+      "-y", "-f", "concat", "-safe", "0", "-i", concatList,
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+      "-c:a", "aac", "-b:a", "128k",
+      "-movflags", "+faststart",
+      framedFile,
+    ]);
     await sendCallback({ job_id, status: "processing", progress: 60, worker_id: WORKER_ID });
+
 
     // 4. Legendas (Groq se preciso, converte para timeline do trecho)
     const captionsEnabled = edl.captions?.enabled !== false && edl.captions?.template !== "none";
@@ -741,10 +882,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v6-pro-captions-framing" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v7-scene-editor" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v6-pro-captions-framing",
+  version: "youtube-rescue-v7-scene-editor",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

@@ -33,10 +33,12 @@ export function ClipCard({
   templateSlug,
   onEdit,
 }: Props) {
+  const qc = useQueryClient();
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
   const stuck = renderJob ? isRenderJobStuck(renderJob) : false;
   const rendering = !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
   const ready = renderJob?.status === "completed" && (clip.render_url || renderJob.output_url);
+  const failed = renderJob?.status === "failed" || stuck;
   const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
   const score = clip.virality_score;
 
@@ -47,11 +49,14 @@ export function ClipCard({
   const end = Number(clip.end_seconds);
   const duration = Math.max(0, end - start);
 
-  // Auto-render de segurança: se por algum motivo o clip não tem job (falha
-  // no auto-enqueue do backend), dispara UMA vez.
+  // Auto-render: se não existe job (null) OU tá stuck, dispara UMA vez.
+  // Se falhou (worker offline etc.), NÃO auto-retry — mostra botão manual.
   const enqueueRender = useServerFn(enqueueClipRender);
   const autoRender = useMutation({
     mutationFn: () => enqueueRender({ data: { clipId: clip.id } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["render-job", clip.id] });
+    },
   });
   const kickedRef = useRef(false);
   useEffect(() => {
@@ -64,8 +69,10 @@ export function ClipCard({
   }, [renderJob, stuck, autoRender]);
 
   const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
-  const statusLabel =
-    renderJob?.status === "processing"
+  const errorMsg = renderJob?.error_message ?? null;
+  const statusLabel = failed
+    ? "Falha na renderização"
+    : renderJob?.status === "processing"
       ? `Renderizando ${progress}%`
       : renderJob?.status === "queued"
         ? "Na fila…"

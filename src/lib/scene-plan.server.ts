@@ -148,8 +148,9 @@ async function generateScenePlanForClip(params: {
 REGRAS:
 - Infira falantes a partir do texto (mudanças de tom, "eu", "você", vocativos, perguntas/respostas). Rotule como A, B, C… se houver múltiplos.
 - Divida o corte em CENAS de 2-6 segundos que ALTERNAM layout para manter energia visual.
-- Layouts disponíveis: "full" (foco em 1), "split" (2 lado a lado), "stack" (2 empilhados, ótimo em 9:16), "pip" (1 grande + inset), "quad" (4), "broll" (voz + gráfico).
-- Reaja aos beats: em GRITARIA/POLÊMICA use "split" ou "stack" mostrando reações; em RISADA use "quad" ou "pip"; em MONOLOGO calmo use "full" com foco no falante.
+- Layouts disponíveis: "full" (foco em 1), "split" (2 lado a lado), "stack" (2 empilhados, MELHOR para podcasts horizontais em 9:16), "pip" (1 grande + inset), "quad" (4), "broll" (voz + gráfico).
+- Para diálogos/podcasts com 2 pessoas, prefira "stack" em vez de "split" quando o material original for horizontal; lado-a-lado em 9:16 costuma cortar rostos.
+- Reaja aos beats: em GRITARIA/POLÊMICA use "stack" mostrando reações; em RISADA use "quad" ou "pip"; em MONOLOGO calmo use "full" com foco no falante.
 - Se só há 1 falante detectado: alterne "full" (crop no rosto) com "broll" ocasional; NÃO invente split.
 - Cenas contíguas (a próxima t = t anterior + dur anterior). Última cena termina em duration.
 - Responda SOMENTE JSON válido no formato: {"speakers":[{"id":"A","label":"Host"}],"scenes":[{"t":0,"dur":3.2,"layout":"full","focus":"A","beat":"intro"}]}`;

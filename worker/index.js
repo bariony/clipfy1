@@ -741,10 +741,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v5-safe-groq-chunks" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v6-pro-captions-framing" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v5-safe-groq-chunks",
+  version: "youtube-rescue-v6-pro-captions-framing",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

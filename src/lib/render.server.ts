@@ -90,6 +90,7 @@ export async function enqueueRenderForClip({
       end: Number(clip.end_seconds),
     },
     captions: {
+      enabled: templateSlug !== "none",
       template: templateSlug,
       language: transcript?.language ?? project.language ?? "auto",
       segments: transcript?.segments ?? [],

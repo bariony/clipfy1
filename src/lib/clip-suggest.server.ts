@@ -269,39 +269,41 @@ Regras profissionais:
     })
     .eq("id", projectId);
 
-  // Segunda passada: gera scene_plan (edição dinâmica) pra cada clipe.
-  // Erros aqui não invalidam os clips — o plano é enriquecimento opcional.
-  try {
-    const { generateScenePlansForClips } = await import("./scene-plan.server");
-    await generateScenePlansForClips({
-      supabase,
-      clips: (inserted ?? []).map((c) => ({
-        id: c.id,
-        startSeconds: Number(c.start_seconds),
-        endSeconds: Number(c.end_seconds),
-      })),
-      segments,
-      apiKey,
-    });
-  } catch (err) {
-    console.warn("[scene-plan] geração falhou (não bloqueia clips):", err);
-  }
-
-  // Auto-render: dispara render de todos os clips (final pronto pra baixar).
-  if (origin && inserted && inserted.length > 0) {
+  // Segunda passada: scene_plan + auto-render são enriquecimentos.
+  // Não bloqueia o callback da transcrição em 85%; a UI já mostra os cortes
+  // e os cards também enfileiram render se ainda não houver job.
+  void (async () => {
     try {
-      const { enqueueRenderForClip } = await import("./render.server");
-      for (const c of inserted) {
-        try {
-          await enqueueRenderForClip({ supabase, clipId: c.id, origin });
-        } catch (err) {
-          console.warn("[auto-render] falha no clip", c.id, err);
-        }
-      }
+      const { generateScenePlansForClips } = await import("./scene-plan.server");
+      await generateScenePlansForClips({
+        supabase,
+        clips: (inserted ?? []).map((c) => ({
+          id: c.id,
+          startSeconds: Number(c.start_seconds),
+          endSeconds: Number(c.end_seconds),
+        })),
+        segments,
+        apiKey,
+      });
     } catch (err) {
-      console.warn("[auto-render] indisponível:", err);
+      console.warn("[scene-plan] geração falhou (não bloqueia clips):", err);
     }
-  }
+
+    if (origin && inserted && inserted.length > 0) {
+      try {
+        const { enqueueRenderForClip } = await import("./render.server");
+        for (const c of inserted) {
+          try {
+            await enqueueRenderForClip({ supabase, clipId: c.id, origin });
+          } catch (err) {
+            console.warn("[auto-render] falha no clip", c.id, err);
+          }
+        }
+      } catch (err) {
+        console.warn("[auto-render] indisponível:", err);
+      }
+    }
+  })();
 
   return rows.length;
 }

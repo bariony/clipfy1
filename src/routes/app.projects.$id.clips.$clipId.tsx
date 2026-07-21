@@ -309,8 +309,6 @@ function ClipEditor() {
   const renderStuck = renderJob ? isRenderJobStuck(renderJob) : false;
   const exportMutation = useMutation({
     mutationFn: async () => {
-      // Save latest edits first so worker uses fresh trim/template/title.
-      await saveMutation.mutateAsync();
       return enqueueRender({ data: { clipId: clip.id } });
     },
     onSuccess: () => {

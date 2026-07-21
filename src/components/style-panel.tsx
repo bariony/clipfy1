@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Loader2, Save, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Save, Sparkles } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CaptionPresetCard } from "@/components/caption-preset-card";
 import { ClipPreview } from "@/components/clip-preview";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   type LayoutMode,
 } from "@/lib/caption-templates";
 import type { TranscriptSegment } from "@/lib/projects";
+
 
 type Props = {
   projectId: string;

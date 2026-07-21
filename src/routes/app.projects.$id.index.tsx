@@ -38,7 +38,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
-import { enqueueClipRender } from "@/lib/render.functions";
+
 import { DEFAULT_TEMPLATE_SLUG, type ProjectPreferences } from "@/lib/caption-templates";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -200,16 +200,6 @@ function ProjectWorkspace() {
     },
   });
 
-  const enqueueRender = useServerFn(enqueueClipRender);
-  const exportClip = useMutation({
-    mutationFn: (clipId: string) => enqueueRender({ data: { clipId } }),
-    onSuccess: (_, clipId) => {
-      void 0;
-      qc.invalidateQueries({ queryKey: ["render-job", clipId] });
-    },
-    onError: (err: unknown) =>
-      toast.error("Falha ao exportar", { description: err instanceof Error ? err.message : "" }),
-  });
 
   const deleteProject = useMutation({
     mutationFn: async () => {

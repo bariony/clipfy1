@@ -124,15 +124,44 @@ export async function generateAndSaveClipSuggestions({
 }) {
   const wanted = Math.max(3, Math.min(targetCount ?? 6, 10));
   const bounds = normalizeClipBounds({ start: 0, end: 60, minClipSeconds, maxClipSeconds });
-  const timeline = (segments.length > 0 ? segments : textToSyntheticSegments(fullText))
-    .slice(0, 220)
-    .map((s) => `[${Math.round(s.start)}-${Math.round(s.end)}s] ${s.text}`)
-    .join("\n")
-    .slice(0, 18000);
 
-  let clips = fallbackClips(fullText, segments, wanted, minClipSeconds, maxClipSeconds);
+  let clips: ClipCandidate[] = fallbackClips(fullText, segments, wanted, minClipSeconds, maxClipSeconds);
 
+  // Semantic Clip Engine v2 — pipeline editorial (topics → beats → validation → score).
+  // Se falhar por qualquer motivo, cai no pipeline LLM antigo abaixo.
+  let sceOk = false;
   try {
+    const { runSemanticClipEngine } = await import("./sce/engine.server");
+    const sceClips = await runSemanticClipEngine({
+      segments,
+      brief,
+      targetCount: wanted,
+      apiKey,
+    });
+    if (sceClips.length > 0) {
+      clips = sceClips.map((c) => ({
+        title: c.title || "Corte recomendado",
+        hook: c.hook,
+        start_seconds: c.start_seconds,
+        end_seconds: c.end_seconds,
+        virality_score: c.virality_score,
+        transcript_excerpt: c.transcript_excerpt,
+        score_reason: c.score_reason,
+      }));
+      sceOk = true;
+      console.info("[SCE] pipeline editorial ok", { clips: sceClips.length, avg: Math.round(sceClips.reduce((s, c) => s + c.virality_score, 0) / sceClips.length) });
+    }
+  } catch (err) {
+    console.warn("[SCE] falhou, caindo pro pipeline legado:", err);
+  }
+
+  if (!sceOk) try {
+    const timeline = (segments.length > 0 ? segments : textToSyntheticSegments(fullText))
+      .slice(0, 220)
+      .map((s) => `[${Math.round(s.start)}-${Math.round(s.end)}s] ${s.text}`)
+      .join("\n")
+      .slice(0, 18000);
+
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -219,7 +248,7 @@ Regras profissionais:
     transcript_excerpt: clip.transcript_excerpt || null,
     status: "suggested" as const,
     aspect_ratio: "9:16",
-    metadata: { generated_by: "clipfy-ai-v2", score_reason: clip.score_reason ?? null } as never,
+    metadata: { generated_by: sceOk ? "clipfy-sce-v2" : "clipfy-ai-v2", score_reason: clip.score_reason ?? null } as never,
   }));
 
   const { data: inserted, error } = await supabase

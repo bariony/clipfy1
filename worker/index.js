@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdir, rm, readFile, writeFile, stat } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import fs, { createReadStream } from "node:fs";
 import path from "node:path";
 import { request as undiciRequest } from "undici";
 import Groq from "groq-sdk";
@@ -66,10 +66,32 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
+// Args comuns pro yt-dlp: cookies (file OU string via env), user-agent, retries,
+// e player-client android+web (contorna maioria dos bloqueios de bot).
+function ytdlpCommonArgs() {
+  const args = [
+    "--no-warnings",
+    "--retries", "3",
+    "--extractor-retries", "3",
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "--extractor-args", "youtube:player_client=android,web",
+  ];
+  const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+  const cookiesInline = process.env.YTDLP_COOKIES;
+  if (cookiesFile && fs.existsSync(cookiesFile)) {
+    args.push("--cookies", cookiesFile);
+  } else if (cookiesInline) {
+    const p = "/tmp/yt-cookies.txt";
+    try { fs.writeFileSync(p, cookiesInline); args.push("--cookies", p); } catch {}
+  }
+  return args;
+}
+
 async function download(url, dest) {
   // YouTube → yt-dlp; resto → curl
   if (/youtube\.com|youtu\.be/.test(url)) {
     await sh("yt-dlp", [
+      ...ytdlpCommonArgs(),
       "-f", "bv*[height<=1080]+ba/b[height<=1080]",
       "--merge-output-format", "mp4",
       "-o", dest,
@@ -350,7 +372,7 @@ async function processTranscribeJob(job) {
 
     if (isYT) {
       // Baixa só o áudio pra reduzir tempo/banda
-      await sh("yt-dlp", ["-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
+      await sh("yt-dlp", [...ytdlpCommonArgs(), "-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
     } else {
       await sh("curl", ["-L", "--fail", "-o", mediaFile, source_url]);
     }

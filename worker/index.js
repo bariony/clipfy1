@@ -971,7 +971,7 @@ async function processJob(job) {
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster };
+    const sceneCtx = { track, cluster, totalScenes: 1, multiCount: 0, lastWasMulti: false };
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes
@@ -1008,11 +1008,15 @@ async function processJob(job) {
         i++;
       }
     }
+    sceneCtx.totalScenes = plannedScenes.length;
 
     const sceneFiles = [];
     for (let i = 0; i < plannedScenes.length; i++) {
       const sc = plannedScenes[i];
       const vf = buildSceneFilter(sc, i, aw, ah, speakerMap, sceneCtx);
+      if (vf.requestedLayout && vf.layout && vf.requestedLayout !== vf.layout) {
+        app.log.info({ scene: i, from: vf.requestedLayout, to: vf.layout }, "layout dividido bloqueado: sem pessoas distintas suficientes");
+      }
       const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
       const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
       const encArgs = [
@@ -1037,9 +1041,9 @@ async function processJob(job) {
         app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
         // fallback: full centrado no rosto real (se tracker rodou) ou coluna
         let fCx = 480;
-        if (cluster) {
-          const raw = focusCxInWindow(track, cluster, sc.focus || "A", sc.t, sc.t + sc.dur);
-          if (raw != null && track.w > 0) fCx = Math.round((raw / track.w) * 1920);
+        if (track?.w) {
+          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw);
+          if (raw?.cx != null) fCx = Math.round((raw.cx / track.w) * 1920);
         } else {
           const fCol = speakerMap[sc.focus] || "left";
           fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;

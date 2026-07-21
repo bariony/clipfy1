@@ -223,7 +223,7 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
 export const DEFAULT_TEMPLATE_SLUG = "hormozi-slam";
 
 export function getCaptionTemplate(slug: string | null | undefined): CaptionStyle {
-  return CAPTION_TEMPLATES.find((t) => t.slug === slug) ?? CAPTION_TEMPLATES[0];
+  return CAPTION_TEMPLATES.find((t) => t.slug === slug) ?? CAPTION_TEMPLATES.find((t) => t.slug === DEFAULT_TEMPLATE_SLUG) ?? CAPTION_TEMPLATES[0];
 }
 
 export type AspectRatio = "9:16" | "1:1" | "16:9";

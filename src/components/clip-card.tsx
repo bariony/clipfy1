@@ -63,8 +63,15 @@ export function ClipCard({
     }
   }, [renderJob, stuck, autoRender]);
 
-  const progressLabel =
-    renderJob?.status === "processing" ? `${renderJob.progress ?? 0}%` : "Renderizando…";
+  const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
+  const statusLabel =
+    renderJob?.status === "processing"
+      ? `Renderizando ${progress}%`
+      : renderJob?.status === "queued"
+        ? "Na fila…"
+        : autoRender.isPending
+          ? "Enfileirando…"
+          : "Preparando…";
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40">
@@ -102,14 +109,31 @@ export function ClipCard({
           {formatDuration(duration)}
         </div>
 
-        {/* Overlay de status */}
-        {!ready && (rendering || autoRender.isPending) && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pb-3 pt-8 text-xs font-semibold text-white">
-            <Loader2 className="size-3.5 animate-spin" />
-            {progressLabel}
+        {/* Overlay de status com barra de progresso */}
+        {!ready && (rendering || autoRender.isPending || renderJob === null) && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-3 pt-10">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-white">
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="size-3 animate-spin" />
+                {statusLabel}
+              </span>
+              {renderJob?.status === "processing" && (
+                <span className="font-mono tabular-nums text-white/80">{progress}%</span>
+              )}
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-white/15">
+              <div
+                className={cn(
+                  "h-full rounded-full bg-primary transition-[width] duration-500 ease-out",
+                  renderJob?.status !== "processing" && "animate-pulse",
+                )}
+                style={{ width: `${renderJob?.status === "processing" ? progress : 8}%` }}
+              />
+            </div>
           </div>
         )}
       </div>
+
 
       <div className="flex flex-1 flex-col p-3">
         <h3 className="mb-1 line-clamp-2 text-sm font-bold leading-snug">{clip.title}</h3>
@@ -152,7 +176,7 @@ export function ClipCard({
               </>
             ) : (
               <>
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {progressLabel}
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
               </>
             )}
           </Button>

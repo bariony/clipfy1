@@ -1,5 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
-import { Download, Edit3, Film, Loader2, Sparkles, Upload, Users } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Download, Edit3, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClipPreview } from "@/components/clip-preview";
 import { cn } from "@/lib/utils";
@@ -10,7 +12,7 @@ import {
   type Clip,
   type TranscriptSegment,
 } from "@/lib/projects";
-import { isScenePlan } from "@/lib/scene-plan";
+import { enqueueClipRender } from "@/lib/render.functions";
 
 type Props = {
   clip: Clip;
@@ -20,8 +22,6 @@ type Props = {
   segments: TranscriptSegment[];
   templateSlug: string;
   onEdit: () => void;
-  onExport: () => void;
-  exporting: boolean;
 };
 
 export function ClipCard({
@@ -32,8 +32,6 @@ export function ClipCard({
   segments,
   templateSlug,
   onEdit,
-  onExport,
-  exporting,
 }: Props) {
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
   const stuck = renderJob ? isRenderJobStuck(renderJob) : false;
@@ -49,7 +47,24 @@ export function ClipCard({
   const end = Number(clip.end_seconds);
   const duration = Math.max(0, end - start);
 
-  const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;
+  // Auto-render de segurança: se por algum motivo o clip não tem job (falha
+  // no auto-enqueue do backend), dispara UMA vez.
+  const enqueueRender = useServerFn(enqueueClipRender);
+  const autoRender = useMutation({
+    mutationFn: () => enqueueRender({ data: { clipId: clip.id } }),
+  });
+  const kickedRef = useRef(false);
+  useEffect(() => {
+    if (kickedRef.current) return;
+    if (renderJob === undefined) return; // ainda carregando
+    if (renderJob === null || stuck) {
+      kickedRef.current = true;
+      autoRender.mutate();
+    }
+  }, [renderJob, stuck, autoRender]);
+
+  const progressLabel =
+    renderJob?.status === "processing" ? `${renderJob.progress ?? 0}%` : "Renderizando…";
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40">
@@ -64,9 +79,9 @@ export function ClipCard({
           templateSlug={effectiveTemplate}
           autoPlayOnHover
           aspectClass="aspect-[9/16]"
+          renderedUrl={ready ? downloadUrl : null}
         />
 
-        {/* Score badge */}
         {score != null && (
           <div
             className={cn(
@@ -83,18 +98,15 @@ export function ClipCard({
           </div>
         )}
 
-        {/* Duration */}
         <div className="absolute right-2 top-2 rounded-full border border-border bg-black/70 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">
           {formatDuration(duration)}
         </div>
 
-        {/* Scene plan badge */}
-        {scenePlan && (
-          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-black/70 px-2 py-0.5 font-mono text-[10px] text-fuchsia-200 backdrop-blur">
-            <Film className="size-3" />
-            {scenePlan.scenes.length} cenas
-            <Users className="ml-1 size-3" />
-            {scenePlan.speakers.length}
+        {/* Overlay de status */}
+        {!ready && (rendering || autoRender.isPending) && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pb-3 pt-8 text-xs font-semibold text-white">
+            <Loader2 className="size-3.5 animate-spin" />
+            {progressLabel}
           </div>
         )}
       </div>
@@ -107,55 +119,43 @@ export function ClipCard({
           <Button
             variant="outline"
             size="sm"
-            className="flex-1 border-border bg-transparent"
+            className="border-border bg-transparent"
             onClick={onEdit}
           >
-            <Edit3 className="mr-1.5 size-3.5" /> Editar
+            <Edit3 className="size-3.5" />
           </Button>
-          {ready && downloadUrl ? (
-            <Button
-              size="sm"
-              className="flex-1 font-bold"
-              onClick={async () => {
-                try {
-                  const res = await fetch(downloadUrl);
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `clipfy-${clip.id}.mp4`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
-                } catch {
-                  window.open(downloadUrl, "_blank");
-                }
-              }}
-            >
-              <Download className="mr-1.5 size-3.5" /> Baixar
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              className="flex-1 font-bold"
-              onClick={onExport}
-              disabled={exporting || rendering}
-            >
-              {exporting || rendering ? (
-                <>
-                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                  {renderJob?.status === "processing"
-                    ? `${renderJob.progress ?? 0}%`
-                    : "Fila…"}
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-1.5 size-3.5" /> {stuck ? "Tentar" : "Exportar"}
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            className="flex-1 font-bold"
+            disabled={!ready || !downloadUrl}
+            onClick={async () => {
+              if (!downloadUrl) return;
+              try {
+                const res = await fetch(downloadUrl);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `clipfy-${clip.id}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              } catch {
+                window.open(downloadUrl, "_blank");
+              }
+            }}
+          >
+            {ready ? (
+              <>
+                <Download className="mr-1.5 size-3.5" /> Baixar MP4
+              </>
+            ) : (
+              <>
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {progressLabel}
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>

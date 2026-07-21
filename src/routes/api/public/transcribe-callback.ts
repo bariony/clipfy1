@@ -72,7 +72,8 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         }
 
         if (parsed.status === "failed") {
-          const message = sanitizeStoredProcessingError(parsed.error_message) ?? "Transcription failed";
+          const message =
+            sanitizeStoredProcessingError(parsed.error_message) ?? "Transcription failed";
           await supabaseAdmin
             .from("projects")
             .update({ status: "failed", error_message: message.slice(0, 500) })

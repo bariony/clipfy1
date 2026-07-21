@@ -19,18 +19,24 @@ export const Route = createFileRoute("/app/projects/")({
 function Projects() {
   const { data: projects } = useSuspenseQuery(projectsQueryOptions());
 
+  const drafts = projects.filter(
+    (p) => (p.storage_path || p.source_url) && p.status === "draft",
+  );
+  const others = projects.filter((p) => !drafts.includes(p));
+  const hasDrafts = drafts.length > 0;
+
   return (
     <div className="px-6 py-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <div className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-primary">// Library</div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Abra qualquer projeto e continue exatamente de onde parou.</p>
+          <div className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-primary">// Biblioteca</div>
+          <h1 className="text-3xl font-extrabold tracking-tight">Projetos</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Continue de onde parou.</p>
         </div>
         <Button asChild size="lg" className="rounded-xl font-extrabold">
           <Link to="/app/new">
             <Plus className="mr-2 size-4" />
-            New Project
+            Novo Projeto
           </Link>
         </Button>
       </div>

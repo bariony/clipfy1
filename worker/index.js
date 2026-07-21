@@ -1161,7 +1161,7 @@ async function processJob(job) {
         // fallback: full centrado no rosto real (se tracker rodou) ou coluna
         let fCx = 480;
         if (track?.w) {
-          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw);
+          const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw, sceneCtx.diar);
           if (raw?.cx != null) fCx = Math.round((raw.cx / track.w) * 1920);
         } else {
           const fCol = speakerMap[sc.focus] || "left";

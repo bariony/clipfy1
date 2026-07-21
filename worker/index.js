@@ -704,25 +704,98 @@ async function processJob(job) {
     ]);
     await sendCallback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
 
-    // 3. Reframe aspect ratio. Para podcast horizontal em Shorts, quando há
-    // múltiplos falantes, usa stack top/bottom em vez de crop central vazio.
+    // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
+    // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
+    // cadência automática alternando full/broll com zoom para dar vida.
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
-    const framedFile = path.join(jobDir, "framed.mp4");
-    const vf = buildReframeFilter(edl, aw, ah);
-    if (vf.complex) {
-      await sh("ffmpeg", [
-        "-y", "-i", cutFile,
-        "-filter_complex", vf.filter,
-        "-map", "[v]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "copy",
-        framedFile,
-      ]);
-    } else {
-      await sh("ffmpeg", ["-y", "-i", cutFile, "-vf", vf.filter, "-c:a", "copy", framedFile]);
+    const speakerMap = speakerColumnMap(edl);
+
+    let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
+    plannedScenes = plannedScenes
+      .map((s) => ({
+        t: Math.max(0, Number(s?.t) || 0),
+        dur: Math.max(0.4, Number(s?.dur) || 0),
+        layout: s?.layout,
+        focus: s?.focus,
+        left: s?.left,
+        right: s?.right,
+        top: s?.top,
+        bottom: s?.bottom,
+        inset: s?.inset,
+      }))
+      .filter((s) => s.t < duration)
+      .map((s) => ({ ...s, dur: Math.min(s.dur, Math.max(0.4, duration - s.t)) }))
+      .sort((a, b) => a.t - b.t);
+
+    if (plannedScenes.length === 0) {
+      // Cadência automática: cenas de ~3.5s alternando full (foco A/B) e broll
+      const step = 3.5;
+      let t = 0;
+      let i = 0;
+      while (t < duration) {
+        const d = Math.min(step, duration - t);
+        const mode = i % 4;
+        plannedScenes.push({
+          t,
+          dur: d,
+          layout: mode === 3 ? "broll" : "full",
+          focus: mode % 2 === 0 ? "A" : "B",
+        });
+        t += d;
+        i++;
+      }
     }
+
+    const sceneFiles = [];
+    for (let i = 0; i < plannedScenes.length; i++) {
+      const sc = plannedScenes[i];
+      const vf = buildSceneFilter(sc, i, aw, ah, speakerMap);
+      const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
+      const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
+      const encArgs = [
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+        "-r", "30", "-pix_fmt", "yuv420p",
+        sceneFile,
+      ];
+      try {
+        if (vf.complex) {
+          await sh("ffmpeg", [
+            ...baseArgs,
+            "-filter_complex", vf.filter,
+            "-map", "[v]", "-map", "0:a?",
+            ...encArgs,
+          ]);
+        } else {
+          await sh("ffmpeg", [...baseArgs, "-vf", vf.filter, ...encArgs]);
+        }
+        sceneFiles.push(sceneFile);
+      } catch (err) {
+        app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
+        // fallback simples: full no falante A com zoom padrão
+        const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, cxOf_static(speakerMap[sc.focus] || "left") - 304)}:0,scale=1080:1920,setsar=1`;
+        await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgs]);
+        sceneFiles.push(sceneFile);
+      }
+    }
+
+    const concatList = path.join(jobDir, "concat.txt");
+    await writeFile(
+      concatList,
+      sceneFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
+      "utf8",
+    );
+    const framedFile = path.join(jobDir, "framed.mp4");
+    await sh("ffmpeg", [
+      "-y", "-f", "concat", "-safe", "0", "-i", concatList,
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+      "-c:a", "aac", "-b:a", "128k",
+      "-movflags", "+faststart",
+      framedFile,
+    ]);
     await sendCallback({ job_id, status: "processing", progress: 60, worker_id: WORKER_ID });
+
 
     // 4. Legendas (Groq se preciso, converte para timeline do trecho)
     const captionsEnabled = edl.captions?.enabled !== false && edl.captions?.template !== "none";

@@ -875,22 +875,14 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
         filter: quadFilter(norm, [primary, ...extraFaces].slice(0, 4)),
       };
     }
-    if (layout === "broll") {
-      const frames = Math.max(30, Math.round((scene.dur || 3) * 30));
-      return {
-        complex: false,
-        filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
-      };
-    }
+    if (layout === "broll") layout = "full";
+    if (ctx) ctx.lastWasMulti = false;
     // full: zoom leve alternado sobre o rosto REAL do falante dominante
-    const zoom = 1 + 0.06 * (i % 3);
-    const sliceW = Math.max(320, Math.round(608 / zoom));
-    const sliceH = Math.max(540, Math.round(1080 / zoom));
-    const x = Math.max(0, Math.min(1920 - sliceW, primary - Math.round(sliceW / 2)));
-    const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
       complex: false,
-      filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
+      layout: "full",
+      requestedLayout,
+      filter: fullFocusFilter(norm, primary, i),
     };
   }
 

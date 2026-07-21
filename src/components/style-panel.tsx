@@ -217,11 +217,15 @@ export function StylePanel({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{title}</div>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{title}</div>
+        {hint && <div className="font-mono text-[10px] text-muted-foreground/70">{hint}</div>}
+      </div>
       {children}
     </div>
   );
 }
+

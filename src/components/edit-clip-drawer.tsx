@@ -92,8 +92,23 @@ export function EditClipDrawer({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Falha ao salvar"),
   });
 
+  const regenScenePlanFn = useServerFn(regenerateScenePlan);
+  const regenScenePlan = useMutation({
+    mutationFn: () => {
+      if (!clip) throw new Error("no clip");
+      return regenScenePlanFn({ data: { clipId: clip.id } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Falha ao gerar plano de cenas"),
+  });
+
   if (!clip) return null;
 
+  const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;
+  const clipDurationOriginal = Math.max(1, Number(clip.end_seconds) - Number(clip.start_seconds));
   const maxTrim = Math.max(Number(clip.end_seconds) + 30, 300);
   const clipLen = Math.max(0, trim[1] - trim[0]);
 

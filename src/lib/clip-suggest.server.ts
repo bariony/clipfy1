@@ -35,8 +35,8 @@ function normalizeClipBounds(params: {
   minClipSeconds?: number | null;
   maxClipSeconds?: number | null;
 }) {
-  const floor = Math.max(12, Math.min(45, Number(params.minClipSeconds ?? 18)));
-  const ceiling = Math.max(floor + 8, Math.min(90, Number(params.maxClipSeconds ?? 60)));
+  const floor = Math.max(35, Math.min(65, Number(params.minClipSeconds ?? 45)));
+  const ceiling = Math.max(floor + 15, Math.min(95, Number(params.maxClipSeconds ?? 75)));
   const start = Math.max(0, Math.floor(params.start));
   const naturalEnd = Math.max(start + floor, Math.ceil(params.end));
   return {
@@ -151,11 +151,11 @@ export async function generateAndSaveClipSuggestions({
               `Você é o motor de cortes virais do Clipfy. Responda somente JSON válido no formato {"clips":[{"title":"","hook":"","start_seconds":0,"end_seconds":0,"virality_score":0,"score_reason":"","transcript_excerpt":""}]}.
 
 Regras profissionais:
-- NÃO use duração fixa. Cada corte deve ter duração natural diferente.
-- Duração alvo: ${bounds.min}-${bounds.max}s. Prefira 22-58s quando for suficiente; só chegue perto do máximo se a história realmente precisar.
-- Corte começa no gancho, sem introdução morta, e termina numa conclusão/virada clara.
-- Score 0-100 deve ser honesto e raro: 95+ só para momento excepcional; 85-94 muito forte; 70-84 bom; abaixo de 70 é mediano. Não dê 88 para qualquer trecho.
-- Varie os scores entre os cortes de acordo com força real do hook, emoção, controvérsia, novidade, clareza e retenção.
+- Duração alvo: ${bounds.min}-${bounds.max}s. MIRE em 55-75s. Cortes abaixo de 45s SÓ se forem excepcionais (score 90+). Nunca entregue clips de 20-30s — é curto demais e perde contexto.
+- Se um trecho forte tem só 25-30s, ESTENDA para incluir o setup anterior OU o desdobramento posterior, formando um arco completo de ~60s. Não corte no meio da história.
+- Se dois momentos fortes estão próximos (gap < 15s), FUNDA em um único corte cobrindo ambos, mesmo que dure 80s.
+- Corte começa no gancho (sem intro morta) e termina numa conclusão/virada clara — não no meio de uma frase.
+- Score 0-100 honesto e raro: 95+ só excepcional; 85-94 muito forte; 70-84 bom; <70 mediano. Varie de acordo com força real do hook, emoção, controvérsia, novidade, clareza e retenção.
 - Títulos curtos em português, sem clickbait mentiroso.`,
           },
           {

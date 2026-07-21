@@ -48,10 +48,32 @@ export const transcribeProject = createServerFn({ method: "POST" })
       .eq("id", project.id);
     if (markErr) throw new Error(markErr.message);
 
-    // -------- Caminho YouTube: delega pro worker (yt-dlp + Groq) --------
-    if (youtubeUrl) {
-      const workerUrl = process.env.RENDER_WORKER_URL;
-      const workerSecret = process.env.RENDER_WORKER_SECRET;
+    // -------- Worker path: YouTube ou Upload grande --------
+    const workerUrl = process.env.RENDER_WORKER_URL;
+    const workerSecret = process.env.RENDER_WORKER_SECRET;
+
+    let workerSourceUrl: string | null = youtubeUrl;
+    if (!workerSourceUrl && storagePath) {
+      // Gera signed URL do upload pro worker baixar (24h)
+      const { data: signed, error: signErr } = await supabase.storage
+        .from("videos")
+        .createSignedUrl(storagePath, 60 * 60 * 24);
+      if (signErr || !signed?.signedUrl) {
+        await supabase
+          .from("projects")
+          .update({
+            status: "failed",
+            error_message: signErr?.message ?? "Falha ao gerar URL do vídeo.",
+            transcribe_progress: 0,
+            active_transcribe_job_id: null,
+          })
+          .eq("id", project.id);
+        throw new Error(signErr?.message || "Could not sign video URL");
+      }
+      workerSourceUrl = signed.signedUrl;
+    }
+
+    if (workerSourceUrl) {
       if (!workerUrl || !workerSecret) {
         await supabase
           .from("projects")
@@ -84,7 +106,7 @@ export const transcribeProject = createServerFn({ method: "POST" })
           body: JSON.stringify({
             job_id: project.id,
             transcribe_job_id: transcribeJobId,
-            source_url: youtubeUrl,
+            source_url: workerSourceUrl,
             language: project.language && project.language !== "auto" ? project.language : null,
             callback_url: callbackUrl,
           }),
@@ -112,8 +134,9 @@ export const transcribeProject = createServerFn({ method: "POST" })
       return { ok: true as const, dispatched: true as const, characters: 0, clips: 0 };
     }
 
-    // -------- Caminho Upload: transcreve direto pelo AI Gateway --------
-    try {
+    // -------- Fallback (nunca deveria chegar aqui) --------
+    if (false) {
+
       if (!storagePath) throw new Error("Nenhum arquivo de vídeo anexado ao projeto.");
 
       const { data: signed, error: signErr } = await supabase.storage

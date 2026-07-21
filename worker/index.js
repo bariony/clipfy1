@@ -565,14 +565,104 @@ function speakerColumnMap(edl) {
   return map;
 }
 
-// Edição dinâmica por cena: recorta enquadramento de acordo com o layout
-// planejado (full/stack/pip/quad/broll) e o falante em foco. Como a fonte é
-// horizontal (podcast/YouTube), mapeamos cada falante para uma metade da tela
-// (A=esquerda, B=direita, C=centro) e cortamos em torno do rosto dele.
-function buildSceneFilter(scene, i, aw, ah, speakerMap) {
+// -------------------- FACE TRACKING --------------------
+// Roda o script Python face_track.py sobre o clipe cortado e devolve
+// { w, h, frames: [{t, faces:[[x,y,w,h]]}] }. Sem OpenCV ou vídeo inválido,
+// devolve null e o pipeline cai pro heurística de colunas fixas.
+async function runFaceTracker(videoPath, sampleFps = 2) {
+  try {
+    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "face_track.py");
+    const out = await new Promise((resolve, reject) => {
+      const p = spawn("python3", [script, videoPath, String(sampleFps)], { stdio: ["ignore", "pipe", "pipe"] });
+      let so = "", se = "";
+      p.stdout.on("data", (d) => (so += d.toString()));
+      p.stderr.on("data", (d) => (se += d.toString()));
+      p.on("error", reject);
+      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`face_track exit ${code}: ${se.slice(0, 200)}`))));
+    });
+    const data = JSON.parse(out);
+    if (data.error) {
+      app.log.warn({ err: data.error }, "face tracker retornou erro (usando fallback)");
+      return null;
+    }
+    if (!Array.isArray(data.frames) || data.frames.length === 0) return null;
+    return data;
+  } catch (err) {
+    app.log.warn({ err: err?.message }, "face tracker falhou (usando fallback de colunas)");
+    return null;
+  }
+}
+
+// Clusterização 1D simples: pega todos os centros X detectados, ordena,
+// encontra o maior gap e divide em 2 clusters. Retorna {A:cx, B:cx} em pixels
+// do vídeo original. Se só houver 1 cluster (single speaker), devolve center.
+function clusterFaces(track) {
+  if (!track || !track.frames) return null;
+  const xs = [];
+  for (const f of track.frames) {
+    for (const [x, , w] of f.faces || []) xs.push(x + w / 2);
+  }
+  if (xs.length < 4) return null;
+  xs.sort((a, b) => a - b);
+  // Se todos os rostos estão numa faixa estreita (<20% da largura), 1 cluster
+  const span = xs[xs.length - 1] - xs[0];
+  if (span < track.w * 0.18) {
+    const mean = xs.reduce((s, v) => s + v, 0) / xs.length;
+    return { single: mean, w: track.w, h: track.h };
+  }
+  // Encontrar maior gap
+  let gapIdx = 0, gapVal = 0;
+  for (let i = 1; i < xs.length; i++) {
+    const g = xs[i] - xs[i - 1];
+    if (g > gapVal) { gapVal = g; gapIdx = i; }
+  }
+  const left = xs.slice(0, gapIdx);
+  const right = xs.slice(gapIdx);
+  const mean = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+  return { A: mean(left), B: mean(right), w: track.w, h: track.h };
+}
+
+// Para uma janela [t0, t1] (relativa ao cutFile), calcula o centro X da
+// face de foco dentro dessa janela — se não houver detecção suficiente,
+// cai pro cluster global.
+function focusCxInWindow(track, cluster, focusId, t0, t1) {
+  if (!track || !cluster) return null;
+  if (cluster.single !== undefined) return cluster.single;
+  const targetSide = focusId === "B" ? "B" : focusId === "C" ? "center" : "A";
+  const midX = (cluster.A + cluster.B) / 2;
+  const xs = [];
+  for (const f of track.frames) {
+    if (f.t < t0 || f.t > t1) continue;
+    for (const [x, , w] of f.faces || []) {
+      const cx = x + w / 2;
+      if (targetSide === "A" && cx < midX) xs.push(cx);
+      else if (targetSide === "B" && cx >= midX) xs.push(cx);
+      else if (targetSide === "center") xs.push(cx);
+    }
+  }
+  if (xs.length === 0) {
+    return targetSide === "B" ? cluster.B : targetSide === "center" ? midX : cluster.A;
+  }
+  xs.sort((a, b) => a - b);
+  return xs[Math.floor(xs.length / 2)]; // mediana pra evitar outliers
+}
+
+// Edição dinâmica por cena com centros de face REAIS (não mais colunas fixas).
+function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const layout = String(scene?.layout || "full");
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
-  const cxOf = (id) => {
+
+  // Resolve centro X em pixels da NORMALIZAÇÃO (1920x1080) para um speaker id.
+  // Prioridade: face tracker → mapa de colunas → default.
+  const cxOf = (id, tWin) => {
+    if (ctx?.track && ctx?.cluster) {
+      const [t0, t1] = tWin || [scene.t, scene.t + scene.dur];
+      const raw = focusCxInWindow(ctx.track, ctx.cluster, id, t0, t1);
+      if (raw != null && ctx.track.w > 0) {
+        // reescala pra 1920 (largura normalizada)
+        return Math.round((raw / ctx.track.w) * 1920);
+      }
+    }
     const col = speakerMap[id] || speakerMap.A || "left";
     return col === "left" ? 480 : col === "right" ? 1440 : 960;
   };
@@ -626,12 +716,13 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap) {
         filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
       };
     }
-    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto do falante
+    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto REAL do falante
     const zoom = 1 + 0.06 * (i % 3);
     const sliceW = Math.max(320, Math.round(608 / zoom));
     const sliceH = Math.max(540, Math.round(1080 / zoom));
     const focusId = scene.focus || "A";
-    const x = Math.max(0, Math.min(1920 - sliceW, cxOf(focusId) - Math.round(sliceW / 2)));
+    const cxPx = cxOf(focusId);
+    const x = Math.max(0, Math.min(1920 - sliceW, cxPx - Math.round(sliceW / 2)));
     const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
       complex: false,

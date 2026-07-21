@@ -223,6 +223,7 @@ export function EditClipDrawer({
             )}
           </div>
 
+          <div className="rounded-xl border border-border bg-card/40 p-3">
             <button
               type="button"
               onClick={() => setShowAdvanced((s) => !s)}

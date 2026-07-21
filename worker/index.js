@@ -1469,10 +1469,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "reframe-v2-autopilot" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: WORKER_VERSION }));
 app.get("/health", async () => ({
   ok: true,
-  version: "reframe-v2-autopilot",
+  version: WORKER_VERSION,
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

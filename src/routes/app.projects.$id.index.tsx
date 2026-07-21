@@ -243,6 +243,20 @@ function ProjectWorkspace() {
       toast.error("Não consegui deletar", { description: err instanceof Error ? err.message : "" }),
   });
 
+  // Quando o poll do projeto pega novo status, os clips/transcript não
+  // são refetch automaticamente. Invalida aqui pra tela sair de "processando".
+  useEffect(() => {
+    if (!project) return;
+    if (
+      project.status === "analyzing" ||
+      project.status === "ready" ||
+      project.status === "completed"
+    ) {
+      qc.invalidateQueries({ queryKey: ["projects", id, "clips"] });
+      qc.invalidateQueries({ queryKey: ["transcript", id] });
+    }
+  }, [project?.status, id, qc]);
+
   useEffect(() => {
     if (!project || project.status !== "analyzing" || clips.length === 0) return;
     supabase

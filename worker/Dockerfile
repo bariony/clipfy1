@@ -40,6 +40,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY index.js ./
+COPY face_track.py ./
 
 ENV NODE_ENV=production \
     PORT=8080 \

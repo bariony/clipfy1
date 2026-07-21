@@ -638,16 +638,31 @@ async function processJob(job) {
     ]);
     await sendCallback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
 
-    // 3. Reframe aspect ratio (crop centralizado)
+    // 3. Reframe aspect ratio. Para podcast horizontal em Shorts, quando há
+    // múltiplos falantes, usa stack top/bottom em vez de crop central vazio.
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const framedFile = path.join(jobDir, "framed.mp4");
-    const vf = `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah}`;
-    await sh("ffmpeg", ["-y", "-i", cutFile, "-vf", vf, "-c:a", "copy", framedFile]);
+    const vf = buildReframeFilter(edl, aw, ah);
+    if (vf.complex) {
+      await sh("ffmpeg", [
+        "-y", "-i", cutFile,
+        "-filter_complex", vf.filter,
+        "-map", "[v]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "copy",
+        framedFile,
+      ]);
+    } else {
+      await sh("ffmpeg", ["-y", "-i", cutFile, "-vf", vf.filter, "-c:a", "copy", framedFile]);
+    }
     await sendCallback({ job_id, status: "processing", progress: 60, worker_id: WORKER_ID });
 
     // 4. Legendas (Groq se preciso, converte para timeline do trecho)
-    const rawWords = await transcribeIfNeeded(framedFile, edl.captions?.segments, edl.captions?.language);
+    const captionsEnabled = edl.captions?.enabled !== false && edl.captions?.template !== "none";
+    const rawWords = captionsEnabled
+      ? await transcribeIfNeeded(framedFile, edl.captions?.segments, edl.captions?.language)
+      : [];
     // Se palavras vêm do transcript global, elas usam timestamp global — reajusta pro corte
     const words = rawWords
       .map((w) => ({ word: w.word, start: w.start - start, end: w.end - start }))
@@ -655,7 +670,7 @@ async function processJob(job) {
       .map((w) => ({ word: w.word, start: Math.max(0, w.start), end: Math.min(duration, w.end) }));
 
     const assFile = path.join(jobDir, "subs.ass");
-    if (words.length > 0) {
+    if (captionsEnabled && words.length > 0) {
       const ass = buildAssSubtitle(words, {
         template: edl.captions?.template,
         position: edl.caption_position,
@@ -667,7 +682,7 @@ async function processJob(job) {
 
     // 5. Queima legendas
     const outFile = path.join(jobDir, "out.mp4");
-    if (words.length > 0) {
+    if (captionsEnabled && words.length > 0) {
       await sh("ffmpeg", [
         "-y", "-i", framedFile,
         "-vf", `ass=${assFile}`,

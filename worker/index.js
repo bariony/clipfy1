@@ -849,39 +849,30 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
 
   if (isVert) {
     if (layout === "stack" || layout === "split") {
-      const topX = Math.max(0, Math.min(840, primary - 540));
-      const botX = Math.max(0, Math.min(840, secondary - 540));
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=2[a][b];` +
-          `[a]crop=1080:960:${topX}:60,setsar=1[top];` +
-          `[b]crop=1080:960:${botX}:60,setsar=1[bot];` +
-          `[top][bot]vstack=inputs=2[v]`,
+        layout,
+        requestedLayout,
+        filter: stackFilter(norm, primary, secondary),
       };
     }
     if (layout === "pip") {
-      const mainX = Math.max(0, Math.min(1312, primary - 304));
-      const insX = Math.max(0, Math.min(1312, secondary - 304));
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=2[m][i];` +
-          `[m]crop=608:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
-          `[i]crop=608:1080:${insX}:0,scale=360:640,setsar=1[inset];` +
-          `[main][inset]overlay=x=W-w-40:y=120[v]`,
+        layout,
+        requestedLayout,
+        filter: pipFilter(norm, primary, secondary),
       };
     }
     if (layout === "quad") {
+      if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; }
       return {
         complex: true,
-        filter:
-          `[0:v]${norm},split=4[a][b][c][d];` +
-          `[a]crop=960:540:0:0,scale=540:960,setsar=1[q1];` +
-          `[b]crop=960:540:960:0,scale=540:960,setsar=1[q2];` +
-          `[c]crop=960:540:0:540,scale=540:960,setsar=1[q3];` +
-          `[d]crop=960:540:960:540,scale=540:960,setsar=1[q4];` +
-          `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`,
+        layout,
+        requestedLayout,
+        filter: quadFilter(norm, [primary, ...extraFaces].slice(0, 4)),
       };
     }
     if (layout === "broll") {

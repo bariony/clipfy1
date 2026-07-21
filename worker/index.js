@@ -51,22 +51,33 @@ let bgutilStarted = false;
 async function callback(payload, targetUrl = `${APP_URL}/api/public/render-callback`) {
   const body = JSON.stringify(payload);
   const signature = createHmac("sha256", RENDER_WORKER_SECRET).update(body).digest("hex");
-  try {
-    const res = await undiciRequest(targetUrl,
-      {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-render-signature": signature },
-      body,
-      headersTimeout: 15000,
-      bodyTimeout: 15000,
-    });
-    if (res.statusCode >= 300) {
+  const finalStatus = payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled";
+  const maxAttempts = finalStatus ? 10 : 4;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await undiciRequest(targetUrl,
+        {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-render-signature": signature },
+        body,
+        headersTimeout: 60000,
+        bodyTimeout: 60000,
+      });
+      if (res.statusCode < 300) return true;
       const txt = await res.body.text();
-      app.log.error({ status: res.statusCode, txt }, "callback falhou");
+      app.log.error({ attempt, status: res.statusCode, txt }, "callback falhou");
+    } catch (err) {
+      app.log.error({ attempt, err }, "callback network erro");
     }
-  } catch (err) {
-    app.log.error({ err }, "callback network erro");
+
+    if (attempt < maxAttempts) {
+      const delay = Math.min(45000, 1500 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 750);
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
+
+  return false;
 }
 
 // -------------------- helpers --------------------

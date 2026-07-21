@@ -81,6 +81,7 @@ function startBgutilProvider() {
     env: process.env,
   });
   bgutilStarted = true;
+  app.log.info({ port: BGUTIL_PROVIDER_PORT }, "bgutil PO Token provider iniciando");
   p.stderr.on("data", (d) => app.log.warn({ msg: d.toString().slice(-500) }, "bgutil stderr"));
   p.on("exit", (code) => {
     bgutilStarted = false;
@@ -194,7 +195,7 @@ async function ytdlpWithFallback(formatArgs, outputPath, url, label) {
 
   const blocked = /confirm you.?re not a bot|cookies|sign in/i.test(safeErrorMessage(lastErr));
   const hint = blocked
-    ? "YouTube bloqueou o IP do servidor. O worker já tentou Android/iOS/MWeb/Embedded; para esse vídeo/IP precisa de cookie/proxy server-side no EasyPanel, não do cliente final."
+    ? "YouTube bloqueou o IP do servidor mesmo com múltiplos clients e PO Token. Para esse vídeo/IP, a solução real é proxy residencial/datacenter limpo ou cookies server-side do dono da plataforma no EasyPanel; cliente final não instala nada."
     : "Falha ao extrair mídia do YouTube depois de múltiplas estratégias.";
   throw new Error(`${hint} Último erro: ${safeErrorMessage(lastErr)}`);
 }
@@ -450,8 +451,19 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker" }));
-app.get("/health", async () => ({ ok: true, running, queued: queue.length, worker_id: WORKER_ID }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-pot-v2" }));
+app.get("/health", async () => ({
+  ok: true,
+  version: "youtube-pot-v2",
+  running,
+  queued: queue.length,
+  worker_id: WORKER_ID,
+  youtube: {
+    bgutil_pot: bgutilStarted,
+    cookies: ytdlpCookieArgs().length > 0,
+    proxy: Boolean(process.env.YTDLP_PROXY),
+  },
+}));
 
 app.post("/jobs", async (req, reply) => {
   const auth = req.headers["authorization"] ?? "";
@@ -542,6 +554,7 @@ app.post("/transcribe", async (req, reply) => {
 
 // Bootstrap
 await mkdir(WORK_DIR, { recursive: true });
+startBgutilProvider();
 app.listen({ host: "0.0.0.0", port: parseInt(PORT, 10) }).then(() => {
   app.log.info(`clipfy worker rodando na porta ${PORT}`);
 });

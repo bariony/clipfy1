@@ -913,6 +913,56 @@ function quadFilter(norm, people) {
   );
 }
 
+// Split-screen NATIVO: o vídeo original já é dividido esquerda/direita
+// (moldura vertical no centro). Em vez de tentar "focar", preserva a
+// composição: metade esquerda vira o topo 1080x960, metade direita a base.
+function nativeSplitFilter(norm) {
+  return (
+    `[0:v]${norm},split=2[L][R];` +
+    `[L]crop=960:1080:0:0,scale=1080:960,setsar=1[top];` +
+    `[R]crop=960:1080:960:0,scale=1080:960,setsar=1[bot];` +
+    `[top][bot]vstack=inputs=2[v]`
+  );
+}
+
+// Agrega frames marcados split=true em janelas contíguas [t0,t1] com
+// coverage mínima. Frames vêm com dt ~= 1/sample_fps (0.5s por padrão).
+function nativeSplitWindows(track) {
+  if (!track?.frames?.length) return [];
+  const frames = track.frames;
+  const dt = frames.length > 1 ? Math.max(0.2, frames[1].t - frames[0].t) : 0.5;
+  const windows = [];
+  let run = null;
+  for (const f of frames) {
+    if (f.split) {
+      if (!run) run = { t0: f.t, t1: f.t + dt, hits: 1, total: 1 };
+      else { run.t1 = f.t + dt; run.hits++; run.total++; }
+    } else if (run) {
+      run.total++;
+      // permite 1 buraco pequeno
+      if (f.t - run.t1 > dt * 1.5) {
+        if (run.hits >= 3 && run.hits / run.total >= 0.6) windows.push({ t0: run.t0, t1: run.t1 });
+        run = null;
+      }
+    }
+  }
+  if (run && run.hits >= 3 && run.hits / run.total >= 0.6) windows.push({ t0: run.t0, t1: run.t1 });
+  return windows;
+}
+
+function sceneIsNativeSplit(windows, t0, t1) {
+  if (!windows?.length) return false;
+  const dur = Math.max(0.001, t1 - t0);
+  let overlap = 0;
+  for (const w of windows) {
+    const s = Math.max(t0, w.t0);
+    const e = Math.min(t1, w.t1);
+    if (e > s) overlap += e - s;
+  }
+  return overlap / dur >= 0.6;
+}
+
+
 
 // Edição dinâmica por cena com centros de face REAIS.
 // Estratégia: ignoramos os rótulos A/B do GPT (que erram na pessoa em cena)
@@ -923,6 +973,22 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
   const t0 = scene.t;
   const t1 = scene.t + scene.dur;
+
+  // 0) Composição do vídeo ORIGINAL: se a cena cai numa janela onde o
+  // material já é split-screen nativo (moldura vertical no centro), NÃO
+  // tenta focar em ninguém — preserva a composição original em stack.
+  if (aw === 1080 && ah === 1920 && sceneIsNativeSplit(ctx?.splitWindows, t0, t1)) {
+    if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; ctx.prevCxRaw = null; }
+    return {
+      complex: true,
+      layout: "stack",
+      requestedLayout,
+      filter: nativeSplitFilter(norm),
+      nativeSplit: true,
+    };
+  }
+
+
 
   // 1) Face-driven focus (pixels normalizados 1920x1080)
   let primaryFace = null;
@@ -1117,7 +1183,12 @@ async function processJob(job) {
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster, diar, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+    const splitWindows = nativeSplitWindows(track);
+    if (splitWindows.length) {
+      app.log.info({ windows: splitWindows.map((w) => ({ t0: +w.t0.toFixed(2), t1: +w.t1.toFixed(2) })) }, "split-screen nativo detectado no material original");
+    }
+    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes
@@ -1300,10 +1371,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v11-diarize" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v12-composition" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v11-diarize",
+  version: "youtube-rescue-v12-composition",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

@@ -12,6 +12,12 @@ export type RenderJob = Database["public"]["Tables"]["render_jobs"]["Row"];
 
 export type TranscriptSegment = { text: string; start: number; end: number };
 
+export function isRenderJobStuck(job: Pick<RenderJob, "status" | "created_at" | "updated_at" | "progress">) {
+  if (job.status !== "queued" && job.status !== "processing") return false;
+  const reference = job.progress > 0 ? job.updated_at : job.created_at;
+  return Date.now() - new Date(reference).getTime() > 90_000;
+}
+
 export const latestRenderJobQueryOptions = (clipId: string) =>
   queryOptions({
     queryKey: ["render-job", clipId],
@@ -29,6 +35,7 @@ export const latestRenderJobQueryOptions = (clipId: string) =>
     refetchInterval: (query) => {
       const j = query.state.data;
       if (!j) return false;
+      if (isRenderJobStuck(j)) return false;
       return j.status === "queued" || j.status === "processing" ? 3000 : false;
     },
   });

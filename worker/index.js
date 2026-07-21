@@ -33,14 +33,17 @@ let running = 0;
 const MAX = Math.max(1, parseInt(CONCURRENCY, 10));
 
 // -------------------- callback assinado --------------------
-async function callback(payload) {
+async function callback(payload, targetUrl = `${APP_URL}/api/public/render-callback`) {
   const body = JSON.stringify(payload);
   const signature = createHmac("sha256", RENDER_WORKER_SECRET).update(body).digest("hex");
   try {
-    const res = await undiciRequest(`${APP_URL}/api/public/render-callback`, {
+    const res = await undiciRequest(targetUrl,
+      {
       method: "POST",
       headers: { "content-type": "application/json", "x-render-signature": signature },
       body,
+      headersTimeout: 15000,
+      bodyTimeout: 15000,
     });
     if (res.statusCode >= 300) {
       const txt = await res.body.text();
@@ -199,8 +202,10 @@ async function processJob(job) {
   const { job_id, edl } = job;
   const jobDir = path.join(WORK_DIR, job_id);
   await mkdir(jobDir, { recursive: true });
+  const callbackUrl = edl?.callback_url || `${APP_URL}/api/public/render-callback`;
+  const sendCallback = (payload) => callback(payload, callbackUrl);
 
-  await callback({ job_id, status: "processing", progress: 5, worker_id: WORKER_ID });
+  await sendCallback({ job_id, status: "processing", progress: 5, worker_id: WORKER_ID });
 
   try {
     if (!edl?.source?.url) throw new Error("source.url ausente");
@@ -210,7 +215,7 @@ async function processJob(job) {
     const srcExt = /youtube/.test(edl.source.url) ? "mp4" : "src";
     const srcFile = path.join(jobDir, `source.${srcExt}`);
     await download(edl.source.url, srcFile);
-    await callback({ job_id, status: "processing", progress: 25, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 25, worker_id: WORKER_ID });
 
     // 2. Corta trecho do clip
     const start = Math.max(0, Number(edl.clip.start ?? 0));
@@ -224,7 +229,7 @@ async function processJob(job) {
       "-movflags", "+faststart",
       cutFile,
     ]);
-    await callback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
 
     // 3. Reframe aspect ratio (crop centralizado)
     const aspect = edl.output.aspect_ratio ?? "9:16";
@@ -232,7 +237,7 @@ async function processJob(job) {
     const framedFile = path.join(jobDir, "framed.mp4");
     const vf = `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah}`;
     await sh("ffmpeg", ["-y", "-i", cutFile, "-vf", vf, "-c:a", "copy", framedFile]);
-    await callback({ job_id, status: "processing", progress: 60, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 60, worker_id: WORKER_ID });
 
     // 4. Legendas (Groq se preciso, converte para timeline do trecho)
     const rawWords = await transcribeIfNeeded(framedFile, edl.captions?.segments, edl.captions?.language);
@@ -251,7 +256,7 @@ async function processJob(job) {
       });
       await writeFile(assFile, ass, "utf8");
     }
-    await callback({ job_id, status: "processing", progress: 75, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 75, worker_id: WORKER_ID });
 
     // 5. Queima legendas
     const outFile = path.join(jobDir, "out.mp4");
@@ -268,7 +273,7 @@ async function processJob(job) {
       // Sem transcrição — só copia
       await sh("ffmpeg", ["-y", "-i", framedFile, "-c", "copy", outFile]);
     }
-    await callback({ job_id, status: "processing", progress: 88, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 88, worker_id: WORKER_ID });
 
     // 6. Upload assinado pro Supabase Storage (bucket renders)
     const buf = await readFile(outFile);
@@ -287,7 +292,7 @@ async function processJob(job) {
       throw new Error(`upload falhou ${putRes.statusCode}: ${txt.slice(0, 300)}`);
     }
 
-    await callback({
+    await sendCallback({
       job_id,
       status: "completed",
       progress: 100,
@@ -296,7 +301,7 @@ async function processJob(job) {
     });
   } catch (err) {
     app.log.error({ err, job_id }, "job falhou");
-    await callback({ job_id, status: "failed", error_message: String(err.message ?? err), worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "failed", error_message: String(err.message ?? err), worker_id: WORKER_ID });
   } finally {
     await rm(jobDir, { recursive: true, force: true }).catch(() => {});
   }

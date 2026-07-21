@@ -465,14 +465,18 @@ async function transcribeMediaInChunks(mediaFile, jobDir, language, onProgress =
 // Legendas .ass estilo karaokê palavra-a-palavra
 function buildAssSubtitle(words, opts) {
   const { template = "hormozi-slam", position = "bottom", aspect = "9:16" } = opts;
+  if (template === "none") return "";
   const [w, h] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
 
   // Presets por template
   const presets = {
-    "hormozi-slam":  { font: "DejaVu Sans", size: 96, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 6, shadow: 2, marginV: 220 },
-    "neon-pulse":    { font: "DejaVu Sans", size: 84, primary: "&H00FFFFFF", outline: "&H00FF00FF", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 4, shadow: 0, marginV: 260 },
-    "tiktok-chip":   { font: "DejaVu Sans", size: 72, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H99000000", bold: 1, borderStyle: 3, outlineW: 8, shadow: 0, marginV: 300 },
-    "minimal-clean": { font: "DejaVu Sans", size: 68, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 0, borderStyle: 1, outlineW: 3, shadow: 0, marginV: 200 },
+    "hormozi-slam":  { font: "DejaVu Sans", size: 76, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 5, shadow: 2, marginV: 260 },
+    "beasty":        { font: "DejaVu Sans", size: 78, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 6, shadow: 2, marginV: 270 },
+    "mozi":          { font: "DejaVu Sans", size: 74, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 5, shadow: 2, marginV: 260 },
+    "big-impact":    { font: "DejaVu Sans", size: 84, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 6, shadow: 2, marginV: 330 },
+    "neon-pulse":    { font: "DejaVu Sans", size: 66, primary: "&H00FFFFFF", outline: "&H00FF00FF", back: "&H00000000", bold: 1, borderStyle: 1, outlineW: 4, shadow: 0, marginV: 280 },
+    "tiktok-chip":   { font: "DejaVu Sans", size: 58, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H99000000", bold: 1, borderStyle: 3, outlineW: 7, shadow: 0, marginV: 320 },
+    "minimal-clean": { font: "DejaVu Sans", size: 58, primary: "&H00FFFFFF", outline: "&H00000000", back: "&H00000000", bold: 0, borderStyle: 1, outlineW: 3, shadow: 0, marginV: 220 },
   };
   const s = presets[template] ?? presets["hormozi-slam"];
 
@@ -487,8 +491,8 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Def,${s.font},${s.size},${s.primary},&H000000FF,${s.outline},${s.back},${s.bold},0,0,0,100,100,0,0,${s.borderStyle},${s.outlineW},${s.shadow},${alignment},60,60,${s.marginV},1
-Style: Hi,${s.font},${s.size},&H0000FFFF,&H000000FF,${s.outline},${s.back},1,0,0,0,110,110,0,0,${s.borderStyle},${s.outlineW},${s.shadow},${alignment},60,60,${s.marginV},1
+Style: Def,${s.font},${s.size},${s.primary},&H000000FF,${s.outline},${s.back},${s.bold},0,0,0,100,100,0,0,${s.borderStyle},${s.outlineW},${s.shadow},${alignment},130,130,${s.marginV},1
+Style: Hi,${s.font},${s.size},&H0000FFFF,&H000000FF,${s.outline},${s.back},1,0,0,0,104,104,0,0,${s.borderStyle},${s.outlineW},${s.shadow},${alignment},130,130,${s.marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -501,14 +505,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return `${H}:${String(M).padStart(2, "0")}:${S}`;
   };
 
-  // Agrupa palavras em "linhas" de ~3-5 palavras
+  // Agrupa palavras em linhas curtas para não estourar a largura no 9:16.
   const lines = [];
   let group = [];
+  let chars = 0;
+  const maxWords = aspect === "9:16" ? 3 : 5;
+  const maxChars = aspect === "9:16" ? 22 : 36;
   for (const wd of words) {
-    group.push(wd);
-    if (group.length >= 4 || (wd.word || "").match(/[.!?]$/)) {
+    const clean = String(wd.word || "").replace(/[{}]/g, "").trim();
+    const nextChars = chars + clean.length + (group.length ? 1 : 0);
+    if (group.length > 0 && (group.length >= maxWords || nextChars > maxChars)) {
       lines.push(group);
       group = [];
+      chars = 0;
+    }
+    group.push(wd);
+    chars += clean.length + (group.length > 1 ? 1 : 0);
+    if ((wd.word || "").match(/[.!?]$/)) {
+      lines.push(group);
+      group = [];
+      chars = 0;
     }
   }
   if (group.length) lines.push(group);
@@ -534,6 +550,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   }
 
   return header + events;
+}
+
+function scenePlanWantsMultiCam(edl, aspect) {
+  const layout = edl.layout;
+  const scenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
+  const hasMultiScene = scenes.some((s) => ["split", "stack", "pip", "quad"].includes(String(s.layout)));
+  return aspect === "9:16" && (layout === "split-v" || layout === "split-h" || (layout === "auto" && hasMultiScene));
+}
+
+function buildReframeFilter(edl, aw, ah) {
+  const aspect = edl.output?.aspect_ratio ?? "9:16";
+  if (scenePlanWantsMultiCam(edl, aspect)) {
+    const topH = Math.floor(ah / 2);
+    const bottomH = ah - topH;
+    return {
+      complex: true,
+      filter:
+        `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,split=2[leftSrc][rightSrc];` +
+        `[leftSrc]crop=iw*0.54:ih:0:0,scale=${aw}:${topH}:force_original_aspect_ratio=increase,crop=${aw}:${topH}[top];` +
+        `[rightSrc]crop=iw*0.54:ih:iw*0.46:0,scale=${aw}:${bottomH}:force_original_aspect_ratio=increase,crop=${aw}:${bottomH}[bottom];` +
+        `[top][bottom]vstack=inputs=2[v]`,
+    };
+  }
+
+  return {
+    complex: false,
+    filter: `scale=iw*max(${aw}/iw\,${ah}/ih):ih*max(${aw}/iw\,${ah}/ih),crop=${aw}:${ah}`,
+  };
 }
 
 async function transcribeIfNeeded(sourceFile, existingSegments, language) {

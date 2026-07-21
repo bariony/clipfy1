@@ -1142,7 +1142,7 @@ async function processJob(job) {
 
     // 2.5. Face tracking do clipe cortado — descobre posições REAIS dos rostos
     // pra alimentar o crop por cena (substitui as colunas 480/1440 fixas).
-    const track = await runFaceTracker(cutFile, 2);
+    const track = await runFaceTracker(cutFile, 4);
     const cluster = clusterFaces(track);
     if (cluster) {
       app.log.info({ detector: track?.detector, cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w }, samples: track?.frames?.length }, "face tracker: clusters detectados");

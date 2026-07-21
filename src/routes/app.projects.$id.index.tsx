@@ -38,7 +38,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
-import { formatProcessingError, isYoutubeBotCheckError } from "@/lib/processing-errors";
+import { formatProcessingError } from "@/lib/processing-errors";
 
 import { DEFAULT_TEMPLATE_SLUG, type ProjectPreferences } from "@/lib/caption-templates";
 

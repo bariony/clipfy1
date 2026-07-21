@@ -806,14 +806,19 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const t1 = scene.t + scene.dur;
 
   // 1) Face-driven focus (pixels normalizados 1920x1080)
-  let primaryCx = null, secondaryCx = null;
+  let primaryFace = null;
+  let secondaryFace = null;
+  let extraFaces = [];
   if (ctx?.track && ctx.track.w > 0) {
-    const p = pickFocusCx(ctx.track, t0, t1, ctx.prevCxRaw);
-    if (p) {
-      primaryCx = Math.round((p.cx / ctx.track.w) * 1920);
-      ctx.prevCxRaw = p.cx;
-      const s = pickSecondaryCx(ctx.track, t0, t1, p.cx);
-      if (s) secondaryCx = Math.round((s.cx / ctx.track.w) * 1920);
+    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw);
+    const primaryGroup = groups?.[0];
+    if (primaryGroup) {
+      ctx.prevCxRaw = primaryGroup.cx;
+      primaryFace = normalizedFace(primaryGroup, ctx.track);
+      extraFaces = distinctFaceGroups(groups, primaryGroup, ctx.track.w, 0.26)
+        .map((g) => normalizedFace(g, ctx.track))
+        .filter(Boolean);
+      secondaryFace = extraFaces[0] ?? null;
     }
   }
 
@@ -822,10 +827,23 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
     const col = speakerMap?.[id] || speakerMap?.A || "left";
     return col === "left" ? 480 : col === "right" ? 1440 : 960;
   };
-  const primary = primaryCx ?? fallbackCx(scene.focus || "A");
+  const primary = primaryFace ?? { cx: fallbackCx(scene.focus || "A"), cy: 430, score: 1, coverage: 1 };
   const secondaryFallbackId =
     scene.inset || scene.bottom || scene.right || ((scene.focus || "A") === "A" ? "B" : "A");
-  const secondary = secondaryCx ?? fallbackCx(secondaryFallbackId);
+  const secondary = secondaryFace ?? { cx: fallbackCx(secondaryFallbackId), cy: 430, score: 0, coverage: 0 };
+  const distinctEnough = Math.abs(primary.cx - secondary.cx) >= 1920 * 0.26;
+  const hasRealSecondary = Boolean(secondaryFace && distinctEnough);
+  const multiRequested = ["stack", "split", "pip", "quad"].includes(requestedLayout);
+  const maxMulti = Math.max(1, Math.floor((ctx?.totalScenes ?? 1) * 0.25));
+  const multiBudgetLeft = (ctx?.multiCount ?? 0) < maxMulti;
+  const allowMultiNow = multiRequested && hasRealSecondary && multiBudgetLeft && !ctx?.lastWasMulti && scene.dur >= 2.2;
+  let layout = requestedLayout;
+
+  // Se não existe segunda pessoa visualmente distinta, não divide a tela.
+  // Full correto é melhor que stack/split duplicado ou sem contexto.
+  if (layout === "broll") layout = "full";
+  if (["stack", "split", "pip"].includes(layout) && !allowMultiNow) layout = "full";
+  if (layout === "quad" && (!allowMultiNow || extraFaces.length < 2)) layout = "full";
 
   const isVert = aw === 1080 && ah === 1920;
 

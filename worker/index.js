@@ -11,6 +11,7 @@ import path from "node:path";
 import { request as undiciRequest } from "undici";
 import Groq from "groq-sdk";
 import { buildReframePlan } from "./reframe.js";
+import { emitDebugArtifacts } from "./debug-emit.js";
 
 const WORKER_VERSION = "sprint1a-debug-evidence";
 

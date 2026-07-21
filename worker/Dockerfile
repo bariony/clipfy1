@@ -47,6 +47,7 @@ RUN npm install --omit=dev
 
 COPY index.js ./
 COPY reframe.js ./
+COPY debug-emit.js ./
 COPY face_track.py ./
 COPY diarize.py ./
 

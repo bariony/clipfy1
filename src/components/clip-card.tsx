@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, Edit3, Loader2, Sparkles, Upload } from "lucide-react";
+import { Download, Edit3, Film, Loader2, Sparkles, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClipPreview } from "@/components/clip-preview";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import {
   type Clip,
   type TranscriptSegment,
 } from "@/lib/projects";
+import { isScenePlan } from "@/lib/scene-plan";
 
 type Props = {
   clip: Clip;

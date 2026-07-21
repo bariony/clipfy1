@@ -28,10 +28,18 @@ if (!GROQ_API_KEY) console.warn("[warn] GROQ_API_KEY não setado (transcrição 
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 const app = Fastify({ logger: true });
 const TRANSCRIBE_CHUNK_SECONDS = Math.max(
-  60,
-  parseInt(process.env.TRANSCRIBE_CHUNK_SECONDS ?? "600", 10),
+  15,
+  parseInt(process.env.TRANSCRIBE_CHUNK_SECONDS ?? "180", 10),
 );
-const TRANSCRIBE_AUDIO_BITRATE = process.env.TRANSCRIBE_AUDIO_BITRATE ?? "64k";
+const TRANSCRIBE_MIN_CHUNK_SECONDS = Math.max(
+  5,
+  parseInt(process.env.TRANSCRIBE_MIN_CHUNK_SECONDS ?? "15", 10),
+);
+const TRANSCRIBE_AUDIO_BITRATE = process.env.TRANSCRIBE_AUDIO_BITRATE ?? "32k";
+const TRANSCRIBE_MAX_UPLOAD_BYTES = Math.max(
+  1 * 1024 * 1024,
+  parseInt(process.env.TRANSCRIBE_MAX_UPLOAD_MB ?? "18", 10) * 1024 * 1024,
+);
 
 // -------------------- fila em memória --------------------
 const queue = [];
@@ -291,13 +299,31 @@ function normalizeSegments(segments, words, offset = 0) {
 }
 
 async function transcribeAudioFile(audioFile, language, offset = 0) {
-  const tr = await groq.audio.transcriptions.create({
-    file: createReadStream(audioFile),
-    model: "whisper-large-v3-turbo",
-    response_format: "verbose_json",
-    timestamp_granularities: ["segment", "word"],
-    language: language && language !== "auto" ? language : undefined,
-  });
+  const audioStat = await stat(audioFile);
+  if (audioStat.size > TRANSCRIBE_MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `Chunk bloqueado antes do Whisper: ${Math.round(audioStat.size / 1024 / 1024)}MB > limite seguro de ${Math.round(TRANSCRIBE_MAX_UPLOAD_BYTES / 1024 / 1024)}MB.`,
+    );
+  }
+
+  let tr;
+  try {
+    tr = await groq.audio.transcriptions.create({
+      file: createReadStream(audioFile),
+      model: "whisper-large-v3-turbo",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment", "word"],
+      language: language && language !== "auto" ? language : undefined,
+    });
+  } catch (err) {
+    const msg = String(err?.message ?? err);
+    if (/413|request entity too large|request_too_large/i.test(msg)) {
+      throw new Error(
+        `Groq recusou o chunk por tamanho (${Math.round(audioStat.size / 1024 / 1024)}MB). O worker vai precisar de chunks menores; erro original: ${msg.slice(0, 220)}`,
+      );
+    }
+    throw err;
+  }
 
   const words = normalizeWords(tr.words, offset);
   const segments = normalizeSegments(tr.segments, words, offset);
@@ -325,40 +351,68 @@ async function transcribeMediaInChunks(mediaFile, jobDir, language, onProgress =
 
   const duration = await ffprobeDuration(mediaFile).catch(() => null);
   const totalDuration = Number.isFinite(duration) && duration > 0 ? duration : null;
-  const starts = totalDuration
-    ? Array.from({ length: Math.ceil(totalDuration / TRANSCRIBE_CHUNK_SECONDS) }, (_, i) => i * TRANSCRIBE_CHUNK_SECONDS)
-    : [0];
-
   const allSegments = [];
   const allText = [];
   let detectedLanguage = language ?? null;
+  let chunkIndex = 0;
+  let cursor = 0;
 
-  for (let i = 0; i < starts.length; i++) {
-    const start = starts[i];
+  while (totalDuration ? cursor < totalDuration - 0.25 : chunkIndex === 0) {
+    const start = cursor;
     const remaining = totalDuration ? Math.max(1, totalDuration - start) : TRANSCRIBE_CHUNK_SECONDS;
-    const chunkDuration = Math.min(TRANSCRIBE_CHUNK_SECONDS, remaining);
-    const chunkFile = path.join(jobDir, `audio-${String(i + 1).padStart(3, "0")}.mp3`);
+    let chunkDuration = Math.min(TRANSCRIBE_CHUNK_SECONDS, remaining);
+    let chunkFile;
+    let chunkStat;
 
-    const ffmpegArgs = [
-      "-y",
-      ...(start > 0 ? ["-ss", String(start)] : []),
-      "-i", mediaFile,
-      ...(totalDuration ? ["-t", String(chunkDuration)] : []),
-      "-vn",
-      "-ac", "1",
-      "-ar", "16000",
-      "-codec:a", "libmp3lame",
-      "-b:a", TRANSCRIBE_AUDIO_BITRATE,
-      chunkFile,
-    ];
-    await sh("ffmpeg", ffmpegArgs);
+    for (;;) {
+      chunkFile = path.join(jobDir, `audio-${String(chunkIndex + 1).padStart(3, "0")}-${Math.round(chunkDuration)}s.mp3`);
+      await rm(chunkFile, { force: true }).catch(() => {});
 
-    const chunkStat = await stat(chunkFile);
-    if (chunkStat.size > 190 * 1024 * 1024) {
+      const ffmpegArgs = [
+        "-y",
+        ...(start > 0 ? ["-ss", String(start)] : []),
+        "-i", mediaFile,
+        ...(totalDuration ? ["-t", String(chunkDuration)] : []),
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-codec:a", "libmp3lame",
+        "-b:a", TRANSCRIBE_AUDIO_BITRATE,
+        chunkFile,
+      ];
+      await sh("ffmpeg", ffmpegArgs);
+
+      chunkStat = await stat(chunkFile);
+      if (chunkStat.size <= TRANSCRIBE_MAX_UPLOAD_BYTES || chunkDuration <= TRANSCRIBE_MIN_CHUNK_SECONDS) break;
+
+      app.log.warn(
+        {
+          chunk: chunkIndex + 1,
+          size_mb: Math.round(chunkStat.size / 1024 / 1024),
+          duration_seconds: Math.round(chunkDuration),
+          max_mb: Math.round(TRANSCRIBE_MAX_UPLOAD_BYTES / 1024 / 1024),
+        },
+        "chunk de áudio grande; reduzindo duração antes de chamar Groq",
+      );
+      await rm(chunkFile, { force: true }).catch(() => {});
+      chunkDuration = Math.max(TRANSCRIBE_MIN_CHUNK_SECONDS, Math.floor(chunkDuration / 2));
+    }
+
+    if (chunkStat.size > TRANSCRIBE_MAX_UPLOAD_BYTES) {
       throw new Error(
-        `Áudio do trecho ficou grande demais (${Math.round(chunkStat.size / 1024 / 1024)}MB). Reduza TRANSCRIBE_CHUNK_SECONDS ou TRANSCRIBE_AUDIO_BITRATE no worker.`,
+        `Mesmo o chunk mínimo ficou grande demais (${Math.round(chunkStat.size / 1024 / 1024)}MB). Configure TRANSCRIBE_AUDIO_BITRATE=16k ou reduza TRANSCRIBE_MIN_CHUNK_SECONDS.`,
       );
     }
+
+    app.log.info(
+      {
+        chunk: chunkIndex + 1,
+        start_seconds: Math.round(start),
+        duration_seconds: Math.round(chunkDuration),
+        size_mb: Number((chunkStat.size / 1024 / 1024).toFixed(2)),
+      },
+      "transcrevendo chunk seguro",
+    );
 
     const tr = await transcribeAudioFile(chunkFile, language, start);
     detectedLanguage = tr.language ?? detectedLanguage;
@@ -366,7 +420,12 @@ async function transcribeMediaInChunks(mediaFile, jobDir, language, onProgress =
     allSegments.push(...tr.segments);
 
     await rm(chunkFile, { force: true }).catch(() => {});
-    await onProgress(Math.min(82, 60 + Math.round(((i + 1) / starts.length) * 22)));
+    cursor = totalDuration ? start + chunkDuration : TRANSCRIBE_CHUNK_SECONDS;
+    chunkIndex++;
+    const progress = totalDuration
+      ? 55 + Math.round(Math.min(1, cursor / totalDuration) * 30)
+      : 85;
+    await onProgress(Math.min(85, progress));
   }
 
   return {
@@ -465,19 +524,14 @@ async function transcribeIfNeeded(sourceFile, existingSegments, language) {
   }
   if (!groq) return [];
 
-  // Extrai áudio (mono 16k) pra reduzir tamanho e acelerar
-  const audio = sourceFile.replace(/\.[^.]+$/, ".wav");
-  await sh("ffmpeg", ["-y", "-i", sourceFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio]);
-
-  const tr = await groq.audio.transcriptions.create({
-    file: createReadStream(audio),
-    model: "whisper-large-v3-turbo",
-    response_format: "verbose_json",
-    timestamp_granularities: ["word"],
-    language: language && language !== "auto" ? language : undefined,
-  });
-
-  return (tr.words ?? []).map((w) => ({ word: w.word, start: w.start, end: w.end }));
+  const renderTranscribeDir = `${sourceFile}.transcribe`;
+  await mkdir(renderTranscribeDir, { recursive: true });
+  try {
+    const transcript = await transcribeMediaInChunks(sourceFile, renderTranscribeDir, language);
+    return transcript.segments.flatMap((segment) => segment.words ?? []);
+  } finally {
+    await rm(renderTranscribeDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // -------------------- pipeline principal --------------------
@@ -602,13 +656,19 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v4-chunked-audio" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v5-safe-groq-chunks" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v4-chunked-audio",
+  version: "youtube-rescue-v5-safe-groq-chunks",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,
+  transcribe: {
+    chunk_seconds: TRANSCRIBE_CHUNK_SECONDS,
+    min_chunk_seconds: TRANSCRIBE_MIN_CHUNK_SECONDS,
+    audio_bitrate: TRANSCRIBE_AUDIO_BITRATE,
+    max_upload_mb: Math.round(TRANSCRIBE_MAX_UPLOAD_BYTES / 1024 / 1024),
+  },
   youtube: {
     bgutil_pot: bgutilStarted,
     cookies: ytdlpCookieArgs().length > 0,

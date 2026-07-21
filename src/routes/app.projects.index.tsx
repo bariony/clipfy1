@@ -88,7 +88,7 @@ function ProjectCard({
   project: p,
   highlight,
 }: {
-  project: ReturnType<typeof useSuspenseQuery<ReturnType<typeof projectsQueryOptions>>>["data"][number];
+  project: Project;
   highlight?: boolean;
 }) {
   const hasSource = Boolean(p.storage_path || p.source_url);

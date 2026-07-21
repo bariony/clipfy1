@@ -913,6 +913,56 @@ function quadFilter(norm, people) {
   );
 }
 
+// Split-screen NATIVO: o vídeo original já é dividido esquerda/direita
+// (moldura vertical no centro). Em vez de tentar "focar", preserva a
+// composição: metade esquerda vira o topo 1080x960, metade direita a base.
+function nativeSplitFilter(norm) {
+  return (
+    `[0:v]${norm},split=2[L][R];` +
+    `[L]crop=960:1080:0:0,scale=1080:960,setsar=1[top];` +
+    `[R]crop=960:1080:960:0,scale=1080:960,setsar=1[bot];` +
+    `[top][bot]vstack=inputs=2[v]`
+  );
+}
+
+// Agrega frames marcados split=true em janelas contíguas [t0,t1] com
+// coverage mínima. Frames vêm com dt ~= 1/sample_fps (0.5s por padrão).
+function nativeSplitWindows(track) {
+  if (!track?.frames?.length) return [];
+  const frames = track.frames;
+  const dt = frames.length > 1 ? Math.max(0.2, frames[1].t - frames[0].t) : 0.5;
+  const windows = [];
+  let run = null;
+  for (const f of frames) {
+    if (f.split) {
+      if (!run) run = { t0: f.t, t1: f.t + dt, hits: 1, total: 1 };
+      else { run.t1 = f.t + dt; run.hits++; run.total++; }
+    } else if (run) {
+      run.total++;
+      // permite 1 buraco pequeno
+      if (f.t - run.t1 > dt * 1.5) {
+        if (run.hits >= 3 && run.hits / run.total >= 0.6) windows.push({ t0: run.t0, t1: run.t1 });
+        run = null;
+      }
+    }
+  }
+  if (run && run.hits >= 3 && run.hits / run.total >= 0.6) windows.push({ t0: run.t0, t1: run.t1 });
+  return windows;
+}
+
+function sceneIsNativeSplit(windows, t0, t1) {
+  if (!windows?.length) return false;
+  const dur = Math.max(0.001, t1 - t0);
+  let overlap = 0;
+  for (const w of windows) {
+    const s = Math.max(t0, w.t0);
+    const e = Math.min(t1, w.t1);
+    if (e > s) overlap += e - s;
+  }
+  return overlap / dur >= 0.6;
+}
+
+
 
 // Edição dinâmica por cena com centros de face REAIS.
 // Estratégia: ignoramos os rótulos A/B do GPT (que erram na pessoa em cena)

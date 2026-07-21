@@ -87,6 +87,16 @@ export function ClipCard({
         <div className="absolute right-2 top-2 rounded-full border border-border bg-black/70 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">
           {formatDuration(duration)}
         </div>
+
+        {/* Scene plan badge */}
+        {scenePlan && (
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-black/70 px-2 py-0.5 font-mono text-[10px] text-fuchsia-200 backdrop-blur">
+            <Film className="size-3" />
+            {scenePlan.scenes.length} cenas
+            <Users className="ml-1 size-3" />
+            {scenePlan.speakers.length}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col p-3">

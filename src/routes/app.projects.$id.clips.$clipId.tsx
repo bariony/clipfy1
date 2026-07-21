@@ -27,6 +27,7 @@ import {
   clipQueryOptions,
   formatDuration,
   latestRenderJobQueryOptions,
+  isRenderJobStuck,
   projectQueryOptions,
   transcriptQueryOptions,
   type TranscriptSegment,
@@ -305,6 +306,7 @@ function ClipEditor() {
 
   const enqueueRender = useServerFn(enqueueClipRender);
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
+  const renderStuck = renderJob ? isRenderJobStuck(renderJob) : false;
   const exportMutation = useMutation({
     mutationFn: async () => {
       // Save latest edits first so worker uses fresh trim/template/title.
@@ -319,7 +321,7 @@ function ClipEditor() {
   });
 
   const isRendering =
-    renderJob?.status === "queued" || renderJob?.status === "processing";
+    !renderStuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
   const renderReady = renderJob?.status === "completed" && (clip.render_url || renderJob.output_url);
   const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
 
@@ -379,7 +381,7 @@ function ClipEditor() {
                 </>
               ) : (
                 <>
-                  <Upload className="mr-2 size-4" /> Exportar vídeo
+                  <Upload className="mr-2 size-4" /> {renderStuck ? "Tentar exportar de novo" : "Exportar vídeo"}
                 </>
               )}
             </Button>

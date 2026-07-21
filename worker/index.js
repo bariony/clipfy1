@@ -929,7 +929,7 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   let secondaryFace = null;
   let extraFaces = [];
   if (ctx?.track && ctx.track.w > 0) {
-    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw);
+    const groups = faceGroupsInWindow(ctx.track, t0, t1, ctx.prevCxRaw, ctx.diar);
     const primaryGroup = groups?.[0];
     if (primaryGroup) {
       ctx.prevCxRaw = primaryGroup.cx;

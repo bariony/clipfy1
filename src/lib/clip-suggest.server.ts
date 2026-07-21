@@ -248,7 +248,7 @@ Regras profissionais:
     transcript_excerpt: clip.transcript_excerpt || null,
     status: "suggested" as const,
     aspect_ratio: "9:16",
-    metadata: { generated_by: "clipfy-ai-v2", score_reason: clip.score_reason ?? null } as never,
+    metadata: { generated_by: sceOk ? "clipfy-sce-v2" : "clipfy-ai-v2", score_reason: clip.score_reason ?? null } as never,
   }));
 
   const { data: inserted, error } = await supabase

@@ -14,7 +14,7 @@ export function isYoutubeBotCheckError(message: string | null | undefined) {
 export function formatProcessingError(message: string | null | undefined) {
   if (!message) return null;
   if (isYoutubeBotCheckError(message)) {
-    return "A tentativa anterior falhou porque o YouTube bloqueou o IP do worker. O worker foi atualizado; tente gerar os cortes novamente.";
+    return "O YouTube bloqueou o IP do worker. Para processar links sem depender do cliente, configure no EasyPanel um proxy residencial/ISP ou cookies server-side de uma conta operacional do Clipfy.";
   }
   return message;
 }

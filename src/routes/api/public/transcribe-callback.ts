@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "crypto";
 import { z } from "zod";
+import { sanitizeStoredProcessingError } from "@/lib/processing-errors";
 
 const Word = z.object({ word: z.string(), start: z.number(), end: z.number() });
 const Segment = z.object({
@@ -71,9 +72,11 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         }
 
         if (parsed.status === "failed") {
+          const message =
+            sanitizeStoredProcessingError(parsed.error_message) ?? "Transcription failed";
           await supabaseAdmin
             .from("projects")
-            .update({ status: "failed", error_message: (parsed.error_message ?? "Transcription failed").slice(0, 500) })
+            .update({ status: "failed", error_message: message.slice(0, 500) })
             .eq("id", project.id);
           return Response.json({ ok: true });
         }

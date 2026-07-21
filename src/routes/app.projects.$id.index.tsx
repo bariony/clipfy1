@@ -38,6 +38,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
+import { formatProcessingError } from "@/lib/processing-errors";
 
 import { DEFAULT_TEMPLATE_SLUG, type ProjectPreferences } from "@/lib/caption-templates";
 
@@ -60,7 +61,9 @@ export const Route = createFileRoute("/app/projects/$id/")({
   ),
   notFoundComponent: () => (
     <div className="p-8">
-      <div className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-destructive">// 404</div>
+      <div className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-destructive">
+        // 404
+      </div>
       <h2 className="text-2xl font-extrabold">Projeto não encontrado</h2>
       <Button asChild className="mt-4 rounded-lg">
         <Link to="/app/projects">Voltar</Link>
@@ -78,7 +81,6 @@ function ProjectWorkspace() {
   const id = project?.id ?? idOrSlug;
   const { data: clips } = useSuspenseQuery(projectClipsQueryOptions(id));
   const { data: transcript } = useSuspenseQuery(transcriptQueryOptions(id));
-
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -148,7 +150,10 @@ function ProjectWorkspace() {
   const uploadVideo = useMutation({
     mutationFn: async (file: File) => {
       setUploadProgress(0);
-      await supabase.from("projects").update({ status: "uploading", error_message: null }).eq("id", id);
+      await supabase
+        .from("projects")
+        .update({ status: "uploading", error_message: null })
+        .eq("id", id);
       try {
         const path = await uploadWithProgress(file, id, setUploadProgress, xhrRef);
         const { error } = await supabase
@@ -162,7 +167,10 @@ function ProjectWorkspace() {
           })
           .eq("id", id);
         if (error) {
-          await supabase.storage.from("videos").remove([path]).catch(() => {});
+          await supabase.storage
+            .from("videos")
+            .remove([path])
+            .catch(() => {});
           throw error;
         }
       } catch (err) {
@@ -193,6 +201,16 @@ function ProjectWorkspace() {
   const processFn = useServerFn(transcribeProject);
   const processSource = useMutation({
     mutationFn: () => processFn({ data: { projectId: id } }),
+    onMutate: () => {
+      qc.setQueryData(
+        ["projects", idOrSlug],
+        project ? { ...project, status: "transcribing", error_message: null } : project,
+      );
+      qc.setQueryData(
+        ["projects", id],
+        project ? { ...project, status: "transcribing", error_message: null } : project,
+      );
+    },
     onSuccess: () => {
       invalidate();
     },
@@ -202,7 +220,6 @@ function ProjectWorkspace() {
       toast.error("Processamento falhou", { description: err instanceof Error ? err.message : "" });
     },
   });
-
 
   const deleteProject = useMutation({
     mutationFn: async () => {
@@ -230,11 +247,15 @@ function ProjectWorkspace() {
 
   const preferences = (project.preferences ?? {}) as ProjectPreferences;
   const templateSlug = preferences.caption_template ?? DEFAULT_TEMPLATE_SLUG;
+  const visibleError = formatProcessingError(project.error_message);
+  const canRetryFromError = hasSource && project.status === "failed";
 
   const source: "upload" | "youtube" = hasYoutube ? "youtube" : "upload";
   const sampleClip = clips[0];
   const sampleStart = sampleClip ? Number(sampleClip.start_seconds) : 0;
-  const sampleEnd = sampleClip ? Number(sampleClip.end_seconds) : Math.min(30, project.duration_seconds ?? 30) || 30;
+  const sampleEnd = sampleClip
+    ? Number(sampleClip.end_seconds)
+    : Math.min(30, project.duration_seconds ?? 30) || 30;
 
   function pickFile(file: File | null) {
     if (!file) return;
@@ -278,9 +299,20 @@ function ProjectWorkspace() {
         <h1 className="text-3xl font-extrabold tracking-tight">{project.title}</h1>
       </div>
 
-      {project.error_message && (
-        <div className="mb-6 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-          {project.error_message}
+      {visibleError && (
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+          <span>{visibleError}</span>
+          {canRetryFromError && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 bg-background/40 text-destructive hover:bg-destructive/10"
+              onClick={() => processSource.mutate()}
+              disabled={isProcessing}
+            >
+              <Sparkles className="mr-2 size-3.5" /> Tentar novamente
+            </Button>
+          )}
         </div>
       )}
 
@@ -321,7 +353,11 @@ function ProjectWorkspace() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <div className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
-                  {hasYoutube ? <Youtube className="size-5" /> : <Clapperboard className="size-5" />}
+                  {hasYoutube ? (
+                    <Youtube className="size-5" />
+                  ) : (
+                    <Clapperboard className="size-5" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-base font-extrabold">Pronto pra gerar os cortes</h2>
@@ -443,7 +479,9 @@ function SourceStage({
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="mb-4">
-        <div className="mb-1 font-mono text-xs uppercase tracking-[0.2em] text-primary">// passo 1</div>
+        <div className="mb-1 font-mono text-xs uppercase tracking-[0.2em] text-primary">
+          // passo 1
+        </div>
         <h2 className="text-base font-extrabold">De onde vem o vídeo?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Envie um arquivo ou cole uma URL do YouTube.
@@ -481,7 +519,9 @@ function SourceStage({
               onSaveYoutube(youtubeUrl);
             }}
           >
-            <Label htmlFor="yt-url" className="mb-2 block text-sm font-semibold">URL do YouTube</Label>
+            <Label htmlFor="yt-url" className="mb-2 block text-sm font-semibold">
+              URL do YouTube
+            </Label>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
                 <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -541,11 +581,23 @@ function UploadDropzone({
             </div>
           </div>
           {uploading ? (
-            <Button type="button" variant="outline" size="sm" onClick={onCancel} className="border-border bg-transparent">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              className="border-border bg-transparent"
+            >
               Cancelar
             </Button>
           ) : (
-            <Button type="button" variant="ghost" size="icon" onClick={onClear} aria-label="Remover">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onClear}
+              aria-label="Remover"
+            >
               <X className="size-4" />
             </Button>
           )}
@@ -574,7 +626,9 @@ function UploadDropzone({
       }}
       className={cn(
         "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-9 text-center transition-colors",
-        dragging ? "border-primary bg-primary/5" : "border-border bg-background/40 hover:border-primary/50",
+        dragging
+          ? "border-primary bg-primary/5"
+          : "border-border bg-background/40 hover:border-primary/50",
       )}
     >
       <input
@@ -607,7 +661,11 @@ async function uploadWithProgress(
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-  const ext = (file.name.split(".").pop() ?? "mp4").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "mp4";
+  const ext =
+    (file.name.split(".").pop() ?? "mp4")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 8) || "mp4";
   const path = `${userId}/${projectId}/${crypto.randomUUID()}.${ext}`;
   const url = `${supabaseUrl}/storage/v1/object/videos/${path}`;
 

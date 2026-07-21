@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { sanitizeStoredProcessingError } from "./processing-errors";
 
 const Input = z.object({ projectId: z.string().uuid() });
 
@@ -17,7 +18,9 @@ export const transcribeProject = createServerFn({ method: "POST" })
     // Carrega o projeto (RLS aplica)
     const { data: project, error: loadErr } = await supabase
       .from("projects")
-      .select("id, user_id, source, source_url, storage_path, language, status, description, target_clip_count")
+      .select(
+        "id, user_id, source, source_url, storage_path, language, status, description, target_clip_count",
+      )
       .eq("id", data.projectId)
       .maybeSingle();
     if (loadErr) throw new Error(loadErr.message);
@@ -72,10 +75,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
         });
         if (!res.ok) {
           const detail = await res.text().catch(() => "");
-          throw new Error(`Worker recusou (${res.status}): ${detail.slice(0, 200)}`);
+          const cleanDetail = sanitizeStoredProcessingError(detail) ?? detail.slice(0, 200);
+          throw new Error(`Worker recusou (${res.status}): ${cleanDetail}`);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Falha ao contatar worker";
+        const rawMessage = err instanceof Error ? err.message : "Falha ao contatar worker";
+        const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
         await supabase
           .from("projects")
           .update({ status: "failed", error_message: message.slice(0, 500) })
@@ -93,7 +98,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
       const { data: signed, error: signErr } = await supabase.storage
         .from("videos")
         .createSignedUrl(storagePath, 60);
-      if (signErr || !signed?.signedUrl) throw new Error(signErr?.message || "Could not sign video URL");
+      if (signErr || !signed?.signedUrl)
+        throw new Error(signErr?.message || "Could not sign video URL");
 
       const fileResp = await fetch(signed.signedUrl);
       if (!fileResp.ok) throw new Error(`Could not download video (${fileResp.status})`);
@@ -115,7 +121,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
       form.append("file", blob, filename);
       form.append("model", "openai/gpt-4o-transcribe");
       form.append("response_format", "json");
-      if (project.language && project.language !== "auto") form.append("language", project.language);
+      if (project.language && project.language !== "auto")
+        form.append("language", project.language);
 
       const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
         method: "POST",
@@ -138,7 +145,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
       const fullText = (payload.text || "").trim();
       if (!fullText) throw new Error("Transcription returned empty text");
 
-      const duration = payload.duration && Number.isFinite(payload.duration) ? Math.round(payload.duration) : null;
+      const duration =
+        payload.duration && Number.isFinite(payload.duration) ? Math.round(payload.duration) : null;
       const segments = (payload.segments ?? [])
         .map((s) => ({
           text: String(s.text ?? "").trim(),
@@ -163,7 +171,11 @@ export const transcribeProject = createServerFn({ method: "POST" })
 
       await supabase
         .from("projects")
-        .update(duration !== null ? { status: "analyzing", duration_seconds: duration } : { status: "analyzing" })
+        .update(
+          duration !== null
+            ? { status: "analyzing", duration_seconds: duration }
+            : { status: "analyzing" },
+        )
         .eq("id", project.id);
 
       const { generateAndSaveClipSuggestions } = await import("./clip-suggest.server");
@@ -189,9 +201,15 @@ export const transcribeProject = createServerFn({ method: "POST" })
         )
         .eq("id", project.id);
 
-      return { ok: true as const, dispatched: false as const, characters: fullText.length, clips: clipCount };
+      return {
+        ok: true as const,
+        dispatched: false as const,
+        characters: fullText.length,
+        clips: clipCount,
+      };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Transcription failed";
+      const rawMessage = err instanceof Error ? err.message : "Transcription failed";
+      const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
       await supabase
         .from("projects")
         .update({ status: "failed", error_message: message.slice(0, 500) })

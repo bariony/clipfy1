@@ -27,6 +27,11 @@ if (!GROQ_API_KEY) console.warn("[warn] GROQ_API_KEY não setado (transcrição 
 
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 const app = Fastify({ logger: true });
+const TRANSCRIBE_CHUNK_SECONDS = Math.max(
+  60,
+  parseInt(process.env.TRANSCRIBE_CHUNK_SECONDS ?? "600", 10),
+);
+const TRANSCRIBE_AUDIO_BITRATE = process.env.TRANSCRIBE_AUDIO_BITRATE ?? "64k";
 
 // -------------------- fila em memória --------------------
 const queue = [];
@@ -258,6 +263,118 @@ async function ffprobeDuration(file) {
     p.stdout.on("data", (d) => (out += d.toString()));
     p.on("close", (c) => (c === 0 ? resolve(parseFloat(out.trim())) : reject(new Error("ffprobe"))));
   });
+}
+
+function normalizeWords(words, offset = 0) {
+  return (words ?? [])
+    .map((w) => ({
+      word: String(w.word ?? "").trim(),
+      start: Number(w.start ?? 0) + offset,
+      end: Number(w.end ?? 0) + offset,
+    }))
+    .filter((w) => w.word && Number.isFinite(w.start) && Number.isFinite(w.end));
+}
+
+function normalizeSegments(segments, words, offset = 0) {
+  return (segments ?? [])
+    .map((s) => {
+      const start = Number(s.start ?? 0) + offset;
+      const end = Number(s.end ?? 0) + offset;
+      return {
+        text: String(s.text ?? "").trim(),
+        start,
+        end,
+        words: words.filter((w) => w.start >= start - 0.05 && w.end <= end + 0.05),
+      };
+    })
+    .filter((s) => s.text && Number.isFinite(s.start) && Number.isFinite(s.end));
+}
+
+async function transcribeAudioFile(audioFile, language, offset = 0) {
+  const tr = await groq.audio.transcriptions.create({
+    file: createReadStream(audioFile),
+    model: "whisper-large-v3-turbo",
+    response_format: "verbose_json",
+    timestamp_granularities: ["segment", "word"],
+    language: language && language !== "auto" ? language : undefined,
+  });
+
+  const words = normalizeWords(tr.words, offset);
+  const segments = normalizeSegments(tr.segments, words, offset);
+
+  if (!segments.length && String(tr.text ?? "").trim()) {
+    const duration = await ffprobeDuration(audioFile).catch(() => null);
+    segments.push({
+      text: String(tr.text ?? "").trim(),
+      start: offset,
+      end: offset + (Number.isFinite(duration) ? duration : 0),
+      words,
+    });
+  }
+
+  return {
+    language: tr.language ?? language ?? null,
+    text: String(tr.text ?? "").trim(),
+    words,
+    segments,
+  };
+}
+
+async function transcribeMediaInChunks(mediaFile, jobDir, language, onProgress = async () => {}) {
+  if (!groq) throw new Error("Worker sem GROQ_API_KEY");
+
+  const duration = await ffprobeDuration(mediaFile).catch(() => null);
+  const totalDuration = Number.isFinite(duration) && duration > 0 ? duration : null;
+  const starts = totalDuration
+    ? Array.from({ length: Math.ceil(totalDuration / TRANSCRIBE_CHUNK_SECONDS) }, (_, i) => i * TRANSCRIBE_CHUNK_SECONDS)
+    : [0];
+
+  const allSegments = [];
+  const allText = [];
+  let detectedLanguage = language ?? null;
+
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i];
+    const remaining = totalDuration ? Math.max(1, totalDuration - start) : TRANSCRIBE_CHUNK_SECONDS;
+    const chunkDuration = Math.min(TRANSCRIBE_CHUNK_SECONDS, remaining);
+    const chunkFile = path.join(jobDir, `audio-${String(i + 1).padStart(3, "0")}.mp3`);
+
+    const ffmpegArgs = [
+      "-y",
+      ...(start > 0 ? ["-ss", String(start)] : []),
+      "-i", mediaFile,
+      ...(totalDuration ? ["-t", String(chunkDuration)] : []),
+      "-vn",
+      "-ac", "1",
+      "-ar", "16000",
+      "-codec:a", "libmp3lame",
+      "-b:a", TRANSCRIBE_AUDIO_BITRATE,
+      chunkFile,
+    ];
+    await sh("ffmpeg", ffmpegArgs);
+
+    const chunkStat = await stat(chunkFile);
+    if (chunkStat.size > 190 * 1024 * 1024) {
+      throw new Error(
+        `Áudio do trecho ficou grande demais (${Math.round(chunkStat.size / 1024 / 1024)}MB). Reduza TRANSCRIBE_CHUNK_SECONDS ou TRANSCRIBE_AUDIO_BITRATE no worker.`,
+      );
+    }
+
+    const tr = await transcribeAudioFile(chunkFile, language, start);
+    detectedLanguage = tr.language ?? detectedLanguage;
+    if (tr.text) allText.push(tr.text);
+    allSegments.push(...tr.segments);
+
+    await rm(chunkFile, { force: true }).catch(() => {});
+    await onProgress(Math.min(82, 60 + Math.round(((i + 1) / starts.length) * 22)));
+  }
+
+  return {
+    duration: totalDuration,
+    language: detectedLanguage,
+    full_text: allText.join(" ").replace(/\s+/g, " ").trim(),
+    segments: allSegments,
+  };
 }
 
 // Legendas .ass estilo karaokê palavra-a-palavra

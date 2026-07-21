@@ -88,6 +88,7 @@ export type Database = {
           metadata: Json | null
           project_id: string
           render_url: string | null
+          scene_plan: Json | null
           start_seconds: number
           status: Database["public"]["Enums"]["clip_status"]
           template_id: string | null
@@ -108,6 +109,7 @@ export type Database = {
           metadata?: Json | null
           project_id: string
           render_url?: string | null
+          scene_plan?: Json | null
           start_seconds: number
           status?: Database["public"]["Enums"]["clip_status"]
           template_id?: string | null
@@ -128,6 +130,7 @@ export type Database = {
           metadata?: Json | null
           project_id?: string
           render_url?: string | null
+          scene_plan?: Json | null
           start_seconds?: number
           status?: Database["public"]["Enums"]["clip_status"]
           template_id?: string | null
@@ -377,6 +380,7 @@ export type Database = {
           project_id: string
           provider: string | null
           segments: Json | null
+          speakers: Json | null
           updated_at: string
           user_id: string
         }
@@ -388,6 +392,7 @@ export type Database = {
           project_id: string
           provider?: string | null
           segments?: Json | null
+          speakers?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -399,6 +404,7 @@ export type Database = {
           project_id?: string
           provider?: string | null
           segments?: Json | null
+          speakers?: Json | null
           updated_at?: string
           user_id?: string
         }

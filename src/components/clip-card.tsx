@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, Edit3, Loader2, Sparkles, Upload } from "lucide-react";
+import { Download, Edit3, Film, Loader2, Sparkles, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClipPreview } from "@/components/clip-preview";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import {
   type Clip,
   type TranscriptSegment,
 } from "@/lib/projects";
+import { isScenePlan } from "@/lib/scene-plan";
 
 type Props = {
   clip: Clip;
@@ -48,6 +49,8 @@ export function ClipCard({
   const end = Number(clip.end_seconds);
   const duration = Math.max(0, end - start);
 
+  const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;
+
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40">
       <div className="relative">
@@ -84,6 +87,16 @@ export function ClipCard({
         <div className="absolute right-2 top-2 rounded-full border border-border bg-black/70 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">
           {formatDuration(duration)}
         </div>
+
+        {/* Scene plan badge */}
+        {scenePlan && (
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-black/70 px-2 py-0.5 font-mono text-[10px] text-fuchsia-200 backdrop-blur">
+            <Film className="size-3" />
+            {scenePlan.scenes.length} cenas
+            <Users className="ml-1 size-3" />
+            {scenePlan.speakers.length}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col p-3">

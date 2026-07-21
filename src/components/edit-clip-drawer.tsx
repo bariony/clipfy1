@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Save } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { Loader2, Save, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +16,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ClipPreview } from "@/components/clip-preview";
+import { SceneTimeline } from "@/components/scene-timeline";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { CAPTION_TEMPLATES } from "@/lib/caption-templates";
 import { formatDuration, type Clip, type TranscriptSegment } from "@/lib/projects";
+import { isScenePlan, LAYOUT_LABEL } from "@/lib/scene-plan";
+import { regenerateScenePlan } from "@/lib/scene-plan.functions";
 
 type Props = {
   open: boolean;
@@ -88,8 +92,23 @@ export function EditClipDrawer({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Falha ao salvar"),
   });
 
+  const regenScenePlanFn = useServerFn(regenerateScenePlan);
+  const regenScenePlan = useMutation({
+    mutationFn: () => {
+      if (!clip) throw new Error("no clip");
+      return regenScenePlanFn({ data: { clipId: clip.id } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Falha ao gerar plano de cenas"),
+  });
+
   if (!clip) return null;
 
+  const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;
+  const clipDurationOriginal = Math.max(1, Number(clip.end_seconds) - Number(clip.start_seconds));
   const maxTrim = Math.max(Number(clip.end_seconds) + 30, 300);
   const clipLen = Math.max(0, trim[1] - trim[0]);
 
@@ -141,6 +160,67 @@ export function EditClipDrawer({
                 setTrim([a, b]);
               }}
             />
+          </div>
+
+          {/* Scene plan — edição dinâmica */}
+          <div className="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/5 p-3">
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold">Edição dinâmica (Scene Plan)</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {scenePlan
+                    ? `${scenePlan.scenes.length} cenas · ${scenePlan.speakers.length} falante(s) detectado(s) via IA`
+                    : "A IA divide o corte em cenas e alterna layouts como um editor profissional."}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 border-fuchsia-500/40 bg-transparent"
+                onClick={() => regenScenePlan.mutate()}
+                disabled={regenScenePlan.isPending}
+              >
+                {regenScenePlan.isPending ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Wand2 className="mr-1.5 size-3.5" />
+                )}
+                {scenePlan ? "Regerar" : "Gerar"}
+              </Button>
+            </div>
+
+            {scenePlan ? (
+              <>
+                <SceneTimeline plan={scenePlan} duration={clipDurationOriginal} />
+                <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {scenePlan.scenes.slice(0, 12).map((s, i) => (
+                    <div
+                      key={i}
+                      className="rounded-md border border-border bg-background/40 px-2 py-1.5 text-[10px]"
+                    >
+                      <div className="font-mono text-muted-foreground">
+                        {s.t.toFixed(1)}s → {(s.t + s.dur).toFixed(1)}s
+                      </div>
+                      <div className="mt-0.5 font-bold text-foreground">
+                        {LAYOUT_LABEL[s.layout]}
+                        {s.focus ? ` · ${s.focus}` : ""}
+                      </div>
+                      {s.beat && (
+                        <div className="text-[9px] italic text-muted-foreground">{s.beat}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/90">
+                  ⚡ Preview do plano acima. O render dinâmico (worker aplicando layouts em cada cena) chega na próxima sessão.
+                </div>
+              </>
+            ) : (
+              <div className="rounded-md border border-dashed border-border bg-background/40 p-3 text-center text-[11px] text-muted-foreground">
+                Sem plano ainda. Clique <span className="font-bold text-foreground">Gerar</span> para
+                a IA analisar falantes e beats.
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-border bg-card/40 p-3">

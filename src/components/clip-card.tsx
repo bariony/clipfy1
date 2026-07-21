@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Download, Edit3, Loader2, Sparkles } from "lucide-react";
+import { AlertCircle, Download, Edit3, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClipPreview } from "@/components/clip-preview";
 import { cn } from "@/lib/utils";
@@ -33,10 +33,12 @@ export function ClipCard({
   templateSlug,
   onEdit,
 }: Props) {
+  const qc = useQueryClient();
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
   const stuck = renderJob ? isRenderJobStuck(renderJob) : false;
   const rendering = !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
   const ready = renderJob?.status === "completed" && (clip.render_url || renderJob.output_url);
+  const failed = renderJob?.status === "failed" || stuck;
   const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
   const score = clip.virality_score;
 
@@ -47,11 +49,14 @@ export function ClipCard({
   const end = Number(clip.end_seconds);
   const duration = Math.max(0, end - start);
 
-  // Auto-render de segurança: se por algum motivo o clip não tem job (falha
-  // no auto-enqueue do backend), dispara UMA vez.
+  // Auto-render: se não existe job (null) OU tá stuck, dispara UMA vez.
+  // Se falhou (worker offline etc.), NÃO auto-retry — mostra botão manual.
   const enqueueRender = useServerFn(enqueueClipRender);
   const autoRender = useMutation({
     mutationFn: () => enqueueRender({ data: { clipId: clip.id } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["render-job", clip.id] });
+    },
   });
   const kickedRef = useRef(false);
   useEffect(() => {
@@ -64,8 +69,10 @@ export function ClipCard({
   }, [renderJob, stuck, autoRender]);
 
   const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
-  const statusLabel =
-    renderJob?.status === "processing"
+  const errorMsg = renderJob?.error_message ?? null;
+  const statusLabel = failed
+    ? "Falha na renderização"
+    : renderJob?.status === "processing"
       ? `Renderizando ${progress}%`
       : renderJob?.status === "queued"
         ? "Na fila…"
@@ -110,7 +117,7 @@ export function ClipCard({
         </div>
 
         {/* Overlay de status com barra de progresso */}
-        {!ready && (rendering || autoRender.isPending || renderJob === null) && (
+        {!ready && !failed && (rendering || autoRender.isPending || renderJob === null) && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-3 pt-10">
             <div className="flex items-center justify-between text-[11px] font-semibold text-white">
               <span className="flex items-center gap-1.5">
@@ -132,6 +139,19 @@ export function ClipCard({
             </div>
           </div>
         )}
+
+        {/* Overlay de falha */}
+        {failed && (
+          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/95 via-black/75 to-transparent px-3 pb-3 pt-10">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-destructive">
+              <AlertCircle className="size-3" />
+              Falha na renderização
+            </div>
+            {errorMsg && (
+              <p className="line-clamp-2 text-[10px] text-white/70">{errorMsg}</p>
+            )}
+          </div>
+        )}
       </div>
 
 
@@ -148,40 +168,64 @@ export function ClipCard({
           >
             <Edit3 className="size-3.5" />
           </Button>
-          <Button
-            size="sm"
-            className="flex-1 font-bold"
-            disabled={!ready || !downloadUrl}
-            onClick={async () => {
-              if (!downloadUrl) return;
-              try {
-                const res = await fetch(downloadUrl);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `clipfy-${clip.id}.mp4`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-              } catch {
-                window.open(downloadUrl, "_blank");
-              }
-            }}
-          >
-            {ready ? (
-              <>
-                <Download className="mr-1.5 size-3.5" /> Baixar MP4
-              </>
-            ) : (
-              <>
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
-              </>
-            )}
-          </Button>
+          {failed ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 border-destructive/40 bg-transparent font-bold text-destructive hover:bg-destructive/10"
+              disabled={autoRender.isPending}
+              onClick={() => {
+                kickedRef.current = true;
+                autoRender.mutate();
+              }}
+            >
+              {autoRender.isPending ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" /> Reenviando…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-1.5 size-3.5" /> Tentar de novo
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="flex-1 font-bold"
+              disabled={!ready || !downloadUrl}
+              onClick={async () => {
+                if (!downloadUrl) return;
+                try {
+                  const res = await fetch(downloadUrl);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `clipfy-${clip.id}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch {
+                  window.open(downloadUrl, "_blank");
+                }
+              }}
+            >
+              {ready ? (
+                <>
+                  <Download className="mr-1.5 size-3.5" /> Baixar MP4
+                </>
+              ) : (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
+
     </div>
   );
 }

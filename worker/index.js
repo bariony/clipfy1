@@ -1193,6 +1193,28 @@ async function processJob(job) {
       app.log.warn({ err: err?.message }, "reframe plan crashou (segue no legado)");
     }
 
+    // Sprint 1a — Modo Diagnóstico: emite artefatos sobre o pipeline atual.
+    // NÃO modifica decisões. Só observa. Ver worker/DEBUG.md.
+    if (edl?.debug?.enabled && edl?.debug?.upload_base) {
+      try {
+        await emitDebugArtifacts({
+          jobId: job_id,
+          uploadBase: edl.debug.upload_base,
+          workerLog: app.log,
+          track,
+          turns: diar?.turns || [],
+          speakers: diar?.speakers || [],
+          reframePlan,
+          clipStart: start,
+          clipEnd: end,
+          duration,
+          version: WORKER_VERSION,
+        });
+      } catch (err) {
+        app.log.warn({ err: err?.message }, "debug artifacts: falha (segue normalmente)");
+      }
+    }
+
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
     // cadência automática alternando full/broll com zoom para dar vida.

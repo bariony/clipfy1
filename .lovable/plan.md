@@ -1,225 +1,122 @@
-# Auto-Reframe v2 — Refatoração para nível OpusClip
+# Sprint 1a — Debug & Evidence Mode
 
-## Diagnóstico da arquitetura atual
+**Regra desta sprint:** Nenhuma linha do algoritmo de reframe/tracker/linking/câmera muda. Só instrumentação, coleta e visualização. Ao final apresento os dados e paro — nada de propor solução até você aprovar.
 
-O worker hoje segue este fluxo:
+## 1. Trigger e storage
 
-```text
-face_track.py (YOLOv10n-face @ 2 fps)
-  → frames[{t, faces:[[x,y,w,h,score]], split, shot}]      // SEM track IDs
-diarize.py (pyannote 3.1)
-  → turns[{start, end, speaker}]
-index.js:
-  computeSpeakerCentroids(track, turns)                    // speaker → 1 ponto X (FALHA CENTRAL)
-  faceGroupsInWindow(track, t0, t1, prevCx, diar)          // reagrupa por bins a CADA cena
-  buildSceneFilter(scene) → fullFocusFilter / stack / pip  // crop instantâneo, sem câmera
-```
+- Nova coluna `projects.debug_reframe boolean default false` (migration).
+- UI: toggle no editor do projeto ("Modo diagnóstico de câmera").
+- Worker lê `edl.debug.enabled`; artefatos vão para `renders/<job_id>/debug/…` no bucket `renders`.
 
-Problemas raiz identificados no código:
+## 2. Artefatos gerados por job (quando debug=on)
 
-1. **Sem identidade persistente**: `face_track.py` emite apenas caixas por frame. Não há Track ID. O Node reinventa "quem é quem" a cada cena via bins de posição X — quando alguém se move, vira outro "cluster".
-2. **Speaker → centroide único** (`computeSpeakerCentroids`, index.js:734): reduz a pessoa a um `cx` global. Move-se um pouco e o bias de 12% da largura (index.js:694) já erra o alvo.
-3. **Escolha por cena, não por vídeo** (`faceGroupsInWindow`, index.js:627): a decisão é local, dependente de `prevCx` fraco (bônus 1.35× a <15% de distância).
-4. **Sem câmera**: `fullFocusFilter` (index.js:856) calcula `crop` estático por cena. O único "movimento" é o zoom `1 + 0.045 * (i%3)` — não segue o falante dentro da cena.
-5. **Enquadramento errado**: `cropYForFace` coloca `cy` a 34% do topo — sem safe-margin para testa/queixo, sem regra de terços real.
-6. **Sem filtros de falso candidato**: qualquer detecção YOLO >0.35 vira massa; pôsteres/TV/rostos ao fundo entram no cálculo.
-7. **Split-screen precoce**: `distinctFaceGroups` promove stack quando há 2 grupos distintos, sem exigir que ambos estejam **falando** em diálogo real.
+Todos com schema versionado (`"schema": "sprint1a.v1"`):
 
-## O que mantemos, o que remove, o que adiciona
+| Arquivo | Conteúdo |
+|---|---|
+| `tracks_report.json` | Por track: duração, hits, gaps, tempo total; `fragmentation_ratio` global; **mapa "Pessoa real → sequência de IDs"** inferido por co-ocorrência espacial |
+| `decisions.jsonl` | 1 linha por sample (~4fps): `t`, tracks ativos (id/bbox/score/blur), speaker diarizado, camera target escolhido, motivo (`speaker_link`/`area`/`persistence`/`hysteresis_hold`), lip_activity (observação) |
+| `switches.json` | Toda troca de foco: `t`, `from_track`, `to_track`, `delta_score`, `trigger` (speaker_change/track_lost/score_flip), `was_hysteresis_bypassed` |
+| `links_report.json` | Speaker↔Track: para cada speaker, **distribuição percentual** entre top-N tracks (heatmap: `speaker_0 → {track_4: 82%, track_7: 11%, track_3: 7%}`) + `agreement_score` |
+| `camera_trace.jsonl` | Estado do controller por frame: `viewport_center`, `zoom`, `layout`, `ema_state` |
+| `lip_activity.json` | Por track/janela: score de movimento de boca (Face Mesh leve). **Só observação, não entra em decisão nenhuma.** |
+| `diagnosis.json` | Diagnóstico automático (ver §5) |
 
-**Mantém (funciona):**
-- `face_track.py` detecção YOLOv10n-face (letterbox + ONNX CPU) — bom detector.
-- `face_track.py` `detect_native_split` + shot boundary (histograma HSV).
-- `diarize.py` pyannote 3.1 CPU — turnos são corretos.
-- `extractAudioForDiarize`, `runDiarizer`, pipeline geral do `index.js` (baixar, cortar, EDL, upload).
-- FFmpeg filter graph e layouts `stackFilter` / `pipFilter` / `nativeSplitFilter` — reaproveitados pelo novo Camera Controller.
+## 3. Vídeo de inspeção
 
-**Remove:**
-- `computeSpeakerCentroids` (speaker → 1 ponto X). Substituída por Speaker↔Track association.
-- Lógica de bins de X dentro de `faceGroupsInWindow` como fonte de identidade. O agrupamento vira apenas fallback quando não há Track.
-- `distinctFaceGroups` como gatilho de stack. Split só via detecção de diálogo real.
-- Zoom oscilante `1 + 0.045*(i%3)` — decorativo, atrapalha estabilidade.
+MP4 empilhado verticalmente:
+- **Topo (16:9 original):** overlay com bounding boxes de todas as tracks (cor por ID), label `T{id} s={score} spk={speaker}`, retângulo pontilhado indicando o **viewport** escolhido pela câmera, badge de layout (full/split/stack).
+- **Baixo (9:16 final):** resultado real com HUD: `t=12.3s | target=T4 | reason=speaker_link | conf=0.82 | lip=0.31`.
+- **Toast "SWITCH"** vermelho por 500ms toda vez que muda de foco, com o motivo.
 
-**Adiciona:**
-- Tracker persistente (IoU + Kalman leve) dentro de `face_track.py`, com **Track ID por rosto**.
-- `SpeakerTrackLinker` em JS: associa cada `speaker` a um `trackId` por tempo de coocorrência + confiança.
-- `ActiveSpeakerScorer`: score por Track em janela deslizante (não por cena).
-- `CameraController`: EMA + limite de velocidade + histerese de troca (600 ms).
-- `Framer`: regra dos terços, safe-margins, zoom baseado em tamanho do rosto.
-- `CandidateFilter`: descarta rostos pequenos, de baixa nitidez, isolados no tempo.
-- `DialogueDetector`: decide split real com base em ping-pong de speakers.
-- `PodcastMode`: perfil conservador quando `speakers ≤ 3` e movimento baixo.
+Arquivo: `renders/<job>/debug/inspection.mp4`.
 
-## Arquitetura nova (fluxo)
+## 4. Benchmark desde o dia 1 (3 vídeos)
 
-```text
-face_track.py  (agora com Tracker + landmarks opcionais)
-  → { w, h, fps_sample, tracks:[{id, frames:[{t, bbox, score, blur, size_ratio}]}], shots, splits }
+`worker/scripts/benchmark.js`:
 
-diarize.py  → turns
+- Roda o pipeline nos 3 vídeos-caso (podcast 2p / podcast 3p / cortes frequentes) com debug=on.
+- Compara `decisions.jsonl` contra ground truth humano (formato simples: `[{t_start, t_end, correct_speaker_id, correct_bbox?}]` num JSON por vídeo).
+- Calcula e imprime tabela + gera `benchmark/<timestamp>.json`:
 
-index.js:
-  buildTracks(raw)                 ← já vem pronto do Python
-  filterCandidates(tracks)         ← remove fundo/tv/rostos pequenos
-  linkSpeakersToTracks(turns, tracks)   ← Speaker A → Track 17 (vídeo inteiro)
-  scoreActiveSpeaker(t)            ← função contínua, retorna trackId ativo
-  cameraController.update(t, target)    ← EMA + velocidade + histerese
-  framer.compose(bbox, camera)     ← rule of thirds + safe margins
-  buildSceneFilter(scene, camera)  ← consome CameraTarget, não Face
-```
+| Métrica | Definição |
+|---|---|
+| Camera Target Accuracy | % de tempo com foco no speaker correto |
+| Wrong Speaker Time | segundos totais focando o errado |
+| Silent Person Time | segundos focando alguém em silêncio quando há speaker ativo |
+| Identity Stability | 1 - (IDs distintos atribuídos à mesma pessoa real / total) |
+| Camera Stability | inverso da variância do viewport_center |
+| Switches per Minute | trocas/min |
+| **Overall Camera Score** | média ponderada normalizada 0-100 |
 
-### 1. Tracker persistente (face_track.py)
+Cada execução salva histórico; script `benchmark:diff` mostra ganho/perda vs. último run. Isso vira parte do fluxo antes de qualquer mudança futura.
 
-Implementar tracker leve **IoU + centroid distance com histerese**, sem dependências pesadas:
+## 5. Diagnóstico automático (o ponto que você marcou como mais importante)
 
-- Cada Track: `{id, last_bbox, last_t, hits, misses, kalman(cx,cy,w)}`.
-- Associação nova detecção → track: melhor IoU ≥ 0.3 **ou** distância de centroide ≤ 8% da largura E tamanho similar (±40%).
-- Track "vive" por até 1.5 s sem detecção (`misses ≤ 3` a 2 fps) antes de morrer — resolve piscadas.
-- Emite `size_ratio = face_h / frame_h`, `blur = variance_of_laplacian(face_crop)` — usados pelo filtro de candidatos.
-- Sample fps sobe para **4 fps** (era 2) para tracking estável; YOLO continua no mesmo custo por frame, dobra o volume mas ainda cabe em CPU.
-- Justificativa da escolha (não ByteTrack/DeepSORT): rostos em podcast são poucos (2–5), lentos, sem oclusões severas — IoU+Kalman resolve com <5% do custo de ByteTrack e sem dependência de embedding. Podemos adicionar ByteTrack depois se um caso real quebrar.
+Ao final de cada execução, `diagnosis.json` responde:
 
-### 2. Speaker↔Track Linker (novo módulo speaker_link.js)
-
-Para cada `speaker`, calcular para cada Track:
-
-```text
-score(speaker, track) =
-    0.55 * talk_overlap_seconds
-  + 0.25 * mean_face_area_during_talk
-  + 0.10 * detection_confidence
-  + 0.10 * temporal_consistency (fração dos turnos com track presente)
-```
-
-Atribuição via Hungarian **ou** greedy com bloqueio (speaker mais falante escolhe primeiro). Resultado é **global**, calculado uma vez por vídeo.
-
-### 3. Active Speaker Scorer (novo)
-
-Função `activeTrackAt(t)`:
-
-```text
-score(track, t) =
-    0.40 * speakerActivity(t)      ← 1.0 se speakerAtualmente(t) === track.speaker
-  + 0.25 * relativeFaceArea
-  + 0.15 * trackPersistence (últimos 2s)
-  + 0.10 * detectionConfidence
-  + 0.10 * positionStability (var(cx) últimos 1s)
-```
-
-Aplicado com **hysteresis**: só troca `activeTrack` se um concorrente supera o atual por margem `≥ 0.15` durante `≥ 600 ms` contínuos. Caso contrário mantém.
-
-Quando nenhum score passa do limite mínimo (`0.35`), mantém último Track — nunca "escolhe aleatório".
-
-### 4. Camera Controller (novo)
-
-Estado: `{cx, cy, zoom, vx, vy, vz}`. Update por passo de 100 ms:
-
-```text
-target = framer(bbox_do_active_track)   // ponto ideal + zoom desejado
-error = target - state
-v = clamp(v + k_p * error, ±V_MAX)      // V_MAX = 8% largura/s (podcast: 4%)
-state += v * dt
-                                        // ease-out via k_p decrescente perto do alvo
-```
-
-- Deadzone: se `|error| < 3% da largura`, `v → 0` (câmera parada).
-- Snap permitido apenas em `shot boundary` (`frames[i].shot === true`) — aí sim pode cortar a câmera instantaneamente.
-- Emite uma curva `cameraPath[]` para o vídeo inteiro; o FFmpeg consome via `crop` com expressão paramétrica (ou via segmentos por cena, se mais barato).
-
-### 5. Framer (composição cinematográfica)
-
-Dado `bbox = {x,y,w,h}` do rosto:
-- Zoom: dimensiona para o rosto ocupar 22–32% da altura do 9:16 (podcast: 24%).
-- Vertical: olhos em `y = 1080 * 0.36` (regra dos terços real, era 0.34 fixo).
-- Safe margins: pelo menos `0.08 * H` acima da testa e `0.06 * H` abaixo do queixo. Se não couber, reduz zoom até caber.
-- Horizontal: ligeiro *lead space* na direção do olhar quando disponível (fallback: rosto centrado ±5% conforme lado do quadro original).
-
-### 6. Candidate Filter
-
-Antes de qualquer scoring, descartar Tracks com:
-- `size_ratio < 0.08` (rosto pequeno demais → fundo/plateia).
-- Vida total `< 1.2 s` (aparição isolada → falso positivo).
-- `blur < threshold` (rosto desfocado — poster/foto tende a ter blur baixo *e* estático; combinado com "não fala nunca" filtra TVs).
-- Track cuja `var(cx) < 2 px` por >30 s **e** não associado a nenhum speaker → pôster/moldura.
-
-### 7. Dialogue Detector (split inteligente)
-
-Split ativado apenas quando, numa janela de 3–4 s:
-- ≥ 3 alternâncias entre 2 speakers,
-- cada um fala ≥ 25% do tempo,
-- ambos os Tracks estão visíveis nessa janela.
-
-Fora disso: `full` com Camera Controller seguindo o ativo. Elimina os splits gratuitos atuais.
-
-### 8. Podcast Mode
-
-Ativado automaticamente quando:
-- `speakers.length` entre 2 e 4,
-- Movimento médio dos Tracks < 5% da largura por segundo,
-- Nenhum `shot` boundary detectado.
-
-Efeitos: `V_MAX` cai para 4%, hysteresis sobe para 900 ms, zoom fixo 24%, dialogue detector exige 4+ alternâncias.
-
-### 9. buildSceneFilter refatorado
-
-Passa a receber `CameraTarget` já resolvido:
-
-```text
-CameraTarget {
-  trackId, bbox, zoom, cx, cy,
-  velocity, confidence, layout: 'full'|'stack'|'pip'|'native-split',
-  history: [...últimos 30 pontos]
+```json
+{
+  "primary_culprit": "speaker_linking",
+  "confidence": 0.71,
+  "evidence": [
+    "63% dos switches ocorreram <200ms após virada de turno de fala",
+    "speaker_0 associado a 3 tracks distintas em janelas de 30s",
+    "tracker fragmentation_ratio=1.8 (ok, não é o gargalo)"
+  ],
+  "component_scores": {
+    "tracker":        { "health": 0.82, "issues": [...] },
+    "diarization":    { "health": 0.65, "issues": [...] },
+    "speaker_linking":{ "health": 0.41, "issues": [...] },
+    "camera_controller":{ "health": 0.77, "issues": [...] }
+  }
 }
 ```
 
-`buildSceneFilter` só monta o filter graph FFmpeg — toda a inteligência foi para os módulos acima.
+Regras de atribuição (heurísticas explícitas, versionadas):
+- Tracker: fragmentation_ratio alto, gaps grandes, IDs curtos.
+- Diarização: turnos < 500ms, speakers oscilando rápido, silêncio prolongado sem speaker.
+- Linking: mesmo speaker → múltiplos tracks; agreement_score baixo; erros concentrados em bordas de turno.
+- Camera Controller: switches sem mudança de speaker nem perda de track (bug de EMA/histerese).
 
-### 10. Logging
+## 6. Ground Truth (3 vídeos, formato mínimo)
 
-Log estruturado por decisão (nível debug):
+`benchmark/ground_truth/<slug>.json`:
 
 ```json
-{"t":12.4,"activeTrack":17,"speaker":"SPEAKER_00","score":0.71,
- "runnerUp":{"track":21,"score":0.42},"switched":false,
- "reason":"hysteresis:remaining=420ms","cam":{"cx":812,"zoom":1.35}}
+{
+  "video": "podcast-2p.mp4",
+  "duration": 62.4,
+  "speakers": ["host", "guest"],
+  "segments": [
+    { "t_start": 0.0, "t_end": 3.2, "correct_speaker": "host" },
+    { "t_start": 3.2, "t_end": 7.8, "correct_speaker": "guest" }
+  ]
+}
 ```
 
-Um sumário por render: nº de trocas, tempo médio entre trocas, % podcast mode, % split.
+Você fornece o caso-0. Eu monto o skeleton dos outros 2 e você rotula (formato acima, ~15min por vídeo).
 
-## Detalhes técnicos
+## 7. O que NÃO faço nesta sprint
 
-### Arquivos alterados
+- Não mexo em `face_track.py` além de expor tracks já existentes.
+- Não mexo em `reframe.js`/decisão.
+- Não mexo em diarização.
+- Lip activity fica em observação, nunca em decisão.
+- **Ao final, apresento dados + hipótese mais provável e paro. Zero alteração de algoritmo até sua aprovação.**
 
-- `worker/face_track.py`: adiciona `SimpleTracker` (IoU+Kalman), campos `id`, `blur`, `size_ratio`; sobe sample para 4 fps; output vira `tracks[]` além de `frames[]` (retro-compat).
-- `worker/lib/speakerLink.js` (novo): `linkSpeakersToTracks(turns, tracks)`.
-- `worker/lib/activeSpeaker.js` (novo): `scorer + hysteresis`.
-- `worker/lib/camera.js` (novo): `CameraController`.
-- `worker/lib/framer.js` (novo): composição, safe margins.
-- `worker/lib/candidateFilter.js` (novo): filtro de falsos.
-- `worker/lib/dialogue.js` (novo): detector de diálogo.
-- `worker/index.js`: remove `computeSpeakerCentroids`, adapta `faceGroupsInWindow` para fallback, `buildSceneFilter` consome `CameraTarget`, adiciona logs.
-- `worker/README.md`: documenta os módulos e o Podcast Mode.
+## Entregáveis técnicos
 
-### Performance
+- Migration: `projects.debug_reframe`
+- UI: toggle no projeto
+- Worker: emissão dos 7 artefatos + `inspection.mp4`
+- `worker/scripts/benchmark.js` + pasta `benchmark/ground_truth/`
+- Diagnóstico automático (`diagnosis.json`)
+- Doc curto `worker/DEBUG.md` explicando como rodar
 
-- Tracker é O(n·m) em detecções por frame; com <8 rostos/frame é desprezível.
-- Kalman leve (numpy 4-state) — sem torch adicional.
-- Sample fps 2→4: dobra chamadas YOLO. YOLOv10n a 640 em CPU x86 ~40 ms/frame → +20 ms/s de vídeo. Aceitável.
-- Sem novos modelos. Toda inteligência é algorítmica.
+## Próximo passo depois deste plano
 
-### Compat com pipeline atual
-
-`index.js` continua chamando `face_track.py` e `diarize.py` com os mesmos args e mesmas etapas macro (baixar → cortar → EDL → render). Os módulos novos plugam entre "análise" e "buildSceneFilter", que é onde estava a maior parte dos bugs.
-
-## Ordem de implementação
-
-1. Tracker persistente + `size_ratio`/`blur` em `face_track.py`.
-2. `speakerLink.js` — validar mapeamento em 1 vídeo real via logs.
-3. `activeSpeaker.js` + hysteresis, ainda com crop estático por cena.
-4. `framer.js` (safe margins + terços) — corrige "corta testa/queixo".
-5. `camera.js` (EMA/velocidade) — remove teleporte.
-6. `candidateFilter.js` — mata pôster/TV/fundo.
-7. `dialogue.js` — split só em diálogo real.
-8. Podcast Mode + logging final.
-
-Cada passo é um deploy independente; se algum regredir, dá pra revisar isoladamente sem quebrar o resto.
+1. Você aprova o plano.
+2. Implemento tudo.
+3. Você liga `debug_reframe` no caso-0, roda, me manda os artefatos (ou eu leio do bucket).
+4. Eu apresento diagnóstico e paro.

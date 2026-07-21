@@ -800,7 +800,7 @@ function quadFilter(norm, people) {
 // e escolhemos o foco pela MASSA VISUAL da janela (área × score × contagem).
 // Suavizado com o foco da cena anterior pra não pipocar entre pessoas.
 function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
-  const layout = String(scene?.layout || "full");
+  const requestedLayout = String(scene?.layout || "full");
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
   const t0 = scene.t;
   const t1 = scene.t + scene.dur;

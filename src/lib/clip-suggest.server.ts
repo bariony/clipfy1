@@ -53,6 +53,7 @@ export async function generateAndSaveClipSuggestions({
   brief,
   targetCount,
   apiKey,
+  origin,
 }: {
   supabase: SupabaseClient<Database>;
   userId: string;
@@ -62,6 +63,7 @@ export async function generateAndSaveClipSuggestions({
   brief: string | null;
   targetCount: number | null;
   apiKey: string;
+  origin?: string;
 }) {
   const wanted = Math.max(3, Math.min(targetCount ?? 6, 10));
   const timeline = (segments.length > 0 ? segments : textToSyntheticSegments(fullText))
@@ -164,6 +166,22 @@ export async function generateAndSaveClipSuggestions({
     });
   } catch (err) {
     console.warn("[scene-plan] geração falhou (não bloqueia clips):", err);
+  }
+
+  // Auto-render: dispara render de todos os clips (final pronto pra baixar).
+  if (origin && inserted && inserted.length > 0) {
+    try {
+      const { enqueueRenderForClip } = await import("./render.server");
+      for (const c of inserted) {
+        try {
+          await enqueueRenderForClip({ supabase, clipId: c.id, origin });
+        } catch (err) {
+          console.warn("[auto-render] falha no clip", c.id, err);
+        }
+      }
+    } catch (err) {
+      console.warn("[auto-render] indisponível:", err);
+    }
   }
 
   return rows.length;

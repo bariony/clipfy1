@@ -167,6 +167,7 @@ export const transcribeProject = createServerFn({ method: "POST" })
         .eq("id", project.id);
 
       const { generateAndSaveClipSuggestions } = await import("./clip-suggest.server");
+      const { getRequestUrl: _getUrl } = await import("@tanstack/react-start/server");
       const clipCount = await generateAndSaveClipSuggestions({
         supabase,
         userId,
@@ -176,6 +177,7 @@ export const transcribeProject = createServerFn({ method: "POST" })
         brief: project.description,
         targetCount: project.target_clip_count,
         apiKey: key,
+        origin: _getUrl().origin,
       });
 
       await supabase

@@ -26,7 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-dejavu-core \
       fontconfig \
     && python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider onnxruntime \
-    && mkdir -p /opt/models \
+    && python3 -m pip install --break-system-packages --no-cache-dir \
+         torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
+    && python3 -m pip install --break-system-packages --no-cache-dir \
+         "pyannote.audio==3.3.2" "speechbrain==1.0.2" \
+    && mkdir -p /opt/models /opt/hf-cache \
     && curl -fsSL -o /opt/models/yolov10n-face.onnx https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov10n-face.onnx \
     && ln -sf /usr/local/bin/yt-dlp /usr/bin/yt-dlp \
     && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y \

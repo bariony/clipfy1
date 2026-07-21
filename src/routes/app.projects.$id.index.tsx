@@ -42,7 +42,7 @@ import { formatProcessingError } from "@/lib/processing-errors";
 
 import { DEFAULT_TEMPLATE_SLUG, type ProjectPreferences } from "@/lib/caption-templates";
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024;
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";
 
 export const Route = createFileRoute("/app/projects/$id/")({
@@ -272,7 +272,7 @@ function ProjectWorkspace() {
   function pickFile(file: File | null) {
     if (!file) return;
     if (!file.type.startsWith("video/")) return toast.error("Escolha um arquivo de vídeo.");
-    if (file.size > MAX_FILE_SIZE) return toast.error("Máx 500MB.");
+    if (file.size > MAX_FILE_SIZE) return toast.error("Máx 2GB.");
     setSelectedFile(file);
   }
 

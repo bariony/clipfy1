@@ -889,6 +889,8 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
 
   return {
     complex: false,
+    layout: "full",
+    requestedLayout,
     filter: `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah},setsar=1`,
   };
 }

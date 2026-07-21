@@ -479,10 +479,10 @@ app.post("/jobs", async (req, reply) => {
 
 // -------- Transcrição YouTube (yt-dlp + Groq) --------
 async function processTranscribeJob(job) {
-  const { job_id, source_url, language, callback_url } = job;
+  const { job_id, transcribe_job_id, source_url, language, callback_url } = job;
   const jobDir = path.join(WORK_DIR, `t-${job_id}`);
   await mkdir(jobDir, { recursive: true });
-  const cb = (payload) => callback({ job_id, worker_id: WORKER_ID, ...payload }, callback_url);
+  const cb = (payload) => callback({ job_id, transcribe_job_id, worker_id: WORKER_ID, ...payload }, callback_url);
 
   await cb({ status: "processing", progress: 10 });
 
@@ -543,10 +543,10 @@ app.post("/transcribe", async (req, reply) => {
   if (auth !== `Bearer ${RENDER_WORKER_SECRET}`) {
     return reply.code(401).send({ error: "unauthorized" });
   }
-  const { job_id, source_url, language, callback_url } = req.body ?? {};
+  const { job_id, transcribe_job_id, source_url, language, callback_url } = req.body ?? {};
   if (!job_id || !source_url) return reply.code(400).send({ error: "job_id e source_url obrigatórios" });
   // Executa em background — callback assíncrono via HMAC
-  processTranscribeJob({ job_id, source_url, language, callback_url }).catch((err) =>
+  processTranscribeJob({ job_id, transcribe_job_id, source_url, language, callback_url }).catch((err) =>
     app.log.error({ err, job_id }, "transcribe crash"),
   );
   return { accepted: true };

@@ -135,6 +135,8 @@ function ProjectWorkspace() {
           storage_path: null,
           status: "draft",
           error_message: null,
+          transcribe_progress: 0,
+          active_transcribe_job_id: null,
         })
         .eq("id", id);
       if (error) throw error;
@@ -164,6 +166,8 @@ function ProjectWorkspace() {
             storage_path: path,
             status: "draft",
             error_message: null,
+            transcribe_progress: 0,
+            active_transcribe_job_id: null,
           })
           .eq("id", id);
         if (error) {
@@ -205,10 +209,15 @@ function ProjectWorkspace() {
       qc.setQueryData(
         ["projects", idOrSlug],
         project ? { ...project, status: "transcribing", error_message: null } : project,
+        project
+          ? { ...project, status: "transcribing", error_message: null, transcribe_progress: 1 }
+          : project,
       );
       qc.setQueryData(
         ["projects", id],
-        project ? { ...project, status: "transcribing", error_message: null } : project,
+        project
+          ? { ...project, status: "transcribing", error_message: null, transcribe_progress: 1 }
+          : project,
       );
     },
     onSuccess: () => {
@@ -249,6 +258,10 @@ function ProjectWorkspace() {
   const templateSlug = preferences.caption_template ?? DEFAULT_TEMPLATE_SLUG;
   const visibleError = formatProcessingError(project.error_message);
   const canRetryFromError = hasSource && project.status === "failed";
+  const processingProgress =
+    project.status === "analyzing"
+      ? Math.max(85, project.transcribe_progress ?? 85)
+      : Math.max(1, Math.min(100, project.transcribe_progress ?? 1));
 
   const source: "upload" | "youtube" = hasYoutube ? "youtube" : "upload";
   const sampleClip = clips[0];
@@ -387,6 +400,13 @@ function ProjectWorkspace() {
           <p className="mt-1 text-sm text-muted-foreground">
             Transcrição + análise de viralidade. Isso leva de segundos a alguns minutos.
           </p>
+          <div className="mx-auto mt-5 max-w-md text-left">
+            <div className="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              <span>{project.status === "analyzing" ? "Gerando cortes" : "Transcrevendo"}</span>
+              <span>{processingProgress}%</span>
+            </div>
+            <Progress value={processingProgress} className="h-1.5" />
+          </div>
         </div>
       )}
 

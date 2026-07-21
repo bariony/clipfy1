@@ -33,10 +33,18 @@ export const transcribeProject = createServerFn({ method: "POST" })
       throw new Error("Adicione um vídeo ou uma URL do YouTube antes de processar.");
     }
 
-    // Marca como transcribing
+    const transcribeJobId = crypto.randomUUID();
+
+    // Marca como transcribing e cria um token da tentativa atual.
+    // Callbacks antigos do worker não podem mais sobrescrever retries novos.
     const { error: markErr } = await supabase
       .from("projects")
-      .update({ status: "transcribing", error_message: null })
+      .update({
+        status: "transcribing",
+        error_message: null,
+        transcribe_progress: 1,
+        active_transcribe_job_id: transcribeJobId,
+      })
       .eq("id", project.id);
     if (markErr) throw new Error(markErr.message);
 
@@ -57,7 +65,9 @@ export const transcribeProject = createServerFn({ method: "POST" })
       const publicOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(requestOrigin)
         ? "https://clipfy1.lovable.app"
         : requestOrigin;
-      const callbackUrl = new URL("/api/public/transcribe-callback", publicOrigin).toString();
+      const callbackUrlObject = new URL("/api/public/transcribe-callback", publicOrigin);
+      callbackUrlObject.searchParams.set("attempt_id", transcribeJobId);
+      const callbackUrl = callbackUrlObject.toString();
 
       try {
         const res = await fetch(`${workerUrl.replace(/\/$/, "")}/transcribe`, {
@@ -68,6 +78,7 @@ export const transcribeProject = createServerFn({ method: "POST" })
           },
           body: JSON.stringify({
             job_id: project.id,
+            transcribe_job_id: transcribeJobId,
             source_url: youtubeUrl,
             language: project.language && project.language !== "auto" ? project.language : null,
             callback_url: callbackUrl,
@@ -83,7 +94,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
         const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
         await supabase
           .from("projects")
-          .update({ status: "failed", error_message: message.slice(0, 500) })
+          .update({
+            status: "failed",
+            error_message: message.slice(0, 500),
+            transcribe_progress: 0,
+            active_transcribe_job_id: null,
+          })
           .eq("id", project.id);
         throw new Error(message);
       }
@@ -173,8 +189,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
         .from("projects")
         .update(
           duration !== null
-            ? { status: "analyzing", duration_seconds: duration }
-            : { status: "analyzing" },
+            ? { status: "analyzing", duration_seconds: duration, transcribe_progress: 85 }
+            : { status: "analyzing", transcribe_progress: 85 },
         )
         .eq("id", project.id);
 
@@ -196,8 +212,19 @@ export const transcribeProject = createServerFn({ method: "POST" })
         .from("projects")
         .update(
           duration !== null
-            ? { status: "ready", duration_seconds: duration, error_message: null }
-            : { status: "ready", error_message: null },
+            ? {
+                status: "ready",
+                duration_seconds: duration,
+                error_message: null,
+                transcribe_progress: 100,
+                active_transcribe_job_id: null,
+              }
+            : {
+                status: "ready",
+                error_message: null,
+                transcribe_progress: 100,
+                active_transcribe_job_id: null,
+              },
         )
         .eq("id", project.id);
 
@@ -212,7 +239,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
       const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
       await supabase
         .from("projects")
-        .update({ status: "failed", error_message: message.slice(0, 500) })
+        .update({
+          status: "failed",
+          error_message: message.slice(0, 500),
+          transcribe_progress: 0,
+          active_transcribe_job_id: null,
+        })
         .eq("id", project.id);
       throw err instanceof Error ? err : new Error(message);
     }

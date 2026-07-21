@@ -13,6 +13,7 @@ const Segment = z.object({
 
 const Payload = z.object({
   job_id: z.string().uuid(), // = project_id
+  transcribe_job_id: z.string().uuid().optional(),
   status: z.enum(["processing", "completed", "failed"]),
   progress: z.number().int().min(0).max(100).optional(),
   language: z.string().nullable().optional(),
@@ -53,20 +54,29 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         }
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const attemptId = parsed.transcribe_job_id ?? new URL(request.url).searchParams.get("attempt_id");
 
         // Confirma que o projeto existe (job_id = project_id)
         const { data: project, error: projErr } = await supabaseAdmin
           .from("projects")
-          .select("id, user_id, description, target_clip_count, language")
+          .select("id, user_id, description, target_clip_count, language, active_transcribe_job_id")
           .eq("id", parsed.job_id)
           .maybeSingle();
         if (projErr) return new Response(projErr.message, { status: 500 });
         if (!project) return new Response("Project not found", { status: 404 });
 
+        if (project.active_transcribe_job_id && attemptId !== project.active_transcribe_job_id) {
+          return Response.json({ ok: true, stale: true });
+        }
+
         if (parsed.status === "processing") {
           await supabaseAdmin
             .from("projects")
-            .update({ status: "transcribing", error_message: null })
+            .update({
+              status: "transcribing",
+              error_message: null,
+              transcribe_progress: Math.max(1, parsed.progress ?? 10),
+            })
             .eq("id", project.id);
           return Response.json({ ok: true });
         }
@@ -76,7 +86,12 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
             sanitizeStoredProcessingError(parsed.error_message) ?? "Transcription failed";
           await supabaseAdmin
             .from("projects")
-            .update({ status: "failed", error_message: message.slice(0, 500) })
+            .update({
+              status: "failed",
+              error_message: message.slice(0, 500),
+              transcribe_progress: 0,
+              active_transcribe_job_id: null,
+            })
             .eq("id", project.id);
           return Response.json({ ok: true });
         }
@@ -99,7 +114,12 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         if (!fullText) {
           await supabaseAdmin
             .from("projects")
-            .update({ status: "failed", error_message: "Transcrição retornou vazia." })
+            .update({
+              status: "failed",
+              error_message: "Transcrição retornou vazia.",
+              transcribe_progress: 0,
+              active_transcribe_job_id: null,
+            })
             .eq("id", project.id);
           return new Response("empty transcript", { status: 400 });
         }
@@ -124,8 +144,8 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
           .from("projects")
           .update(
             duration !== null
-              ? { status: "analyzing", duration_seconds: duration }
-              : { status: "analyzing" },
+              ? { status: "analyzing", duration_seconds: duration, transcribe_progress: 85 }
+              : { status: "analyzing", transcribe_progress: 85 },
           )
           .eq("id", project.id);
 
@@ -148,7 +168,12 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
           const message = err instanceof Error ? err.message : "Falha ao gerar cortes";
           await supabaseAdmin
             .from("projects")
-            .update({ status: "failed", error_message: message.slice(0, 500) })
+            .update({
+              status: "failed",
+              error_message: message.slice(0, 500),
+              transcribe_progress: 0,
+              active_transcribe_job_id: null,
+            })
             .eq("id", project.id);
           return new Response(message, { status: 500 });
         }
@@ -157,8 +182,19 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
           .from("projects")
           .update(
             duration !== null
-              ? { status: "ready", duration_seconds: duration, error_message: null }
-              : { status: "ready", error_message: null },
+              ? {
+                  status: "ready",
+                  duration_seconds: duration,
+                  error_message: null,
+                  transcribe_progress: 100,
+                  active_transcribe_job_id: null,
+                }
+              : {
+                  status: "ready",
+                  error_message: null,
+                  transcribe_progress: 100,
+                  active_transcribe_job_id: null,
+                },
           )
           .eq("id", project.id);
 

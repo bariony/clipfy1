@@ -1245,33 +1245,91 @@ async function processJob(job) {
     const sceneFiles = [];
     for (let i = 0; i < plannedScenes.length; i++) {
       const sc = plannedScenes[i];
+      const t0 = sc.t, t1 = sc.t + sc.dur;
+      const encArgs = [
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+        "-r", "30", "-pix_fmt", "yuv420p",
+      ];
+
+      // Plan-driven render (auto-reframe v2) — só para 9:16 e quando o plano existe
+      // e a cena não cai em split-screen nativo (esse caminho preserva a composição).
+      const useNativeSplit = aw === 1080 && ah === 1920 && sceneIsNativeSplit(sceneCtx.splitWindows, t0, t1);
+      let planned = false;
+      if (reframePlan && aw === 1080 && ah === 1920 && !useNativeSplit) {
+        try {
+          const samples = reframePlan.sliceRange(t0, t1).filter((s) => s.cam);
+          if (samples.length >= 2) {
+            // Agrupa amostras adjacentes com câmera quase constante
+            const THRESH_X = reframePlan.frameW * 0.012;
+            const THRESH_W = reframePlan.frameW * 0.02;
+            const groups = [];
+            for (const s of samples) {
+              const last = groups[groups.length - 1];
+              const dt = 0.1;
+              if (!last) { groups.push({ tStart: s.t, tEnd: s.t + dt, cam: { ...s.cam }, trackId: s.trackId, reason: s.reason }); continue; }
+              const dX = Math.abs(s.cam.sliceX - last.cam.sliceX);
+              const dW = Math.abs(s.cam.sliceW - last.cam.sliceW);
+              const same = dX < THRESH_X && dW < THRESH_W && s.trackId === last.trackId;
+              if (same) {
+                last.tEnd = s.t + dt;
+                // média incremental — deriva suave da câmera dentro do grupo
+                last.cam.sliceX = (last.cam.sliceX + s.cam.sliceX) / 2;
+                last.cam.sliceY = (last.cam.sliceY + s.cam.sliceY) / 2;
+                last.cam.sliceW = (last.cam.sliceW + s.cam.sliceW) / 2;
+                last.cam.sliceH = (last.cam.sliceH + s.cam.sliceH) / 2;
+              } else {
+                groups.push({ tStart: s.t, tEnd: s.t + dt, cam: { ...s.cam }, trackId: s.trackId, reason: s.reason });
+              }
+            }
+            groups[0].tStart = t0;
+            groups[groups.length - 1].tEnd = t1;
+
+            let k = 0;
+            for (const g of groups) {
+              const dur = Math.max(0.15, g.tEnd - g.tStart);
+              const seg = path.join(jobDir, `scene-${String(i).padStart(3, "0")}-${String(k).padStart(2, "0")}.mp4`);
+              const sw = Math.max(64, Math.min(reframePlan.frameW, Math.round(g.cam.sliceW)));
+              const sh_ = Math.max(64, Math.min(reframePlan.frameH, Math.round(g.cam.sliceH)));
+              const sx = Math.max(0, Math.min(reframePlan.frameW - sw, Math.round(g.cam.sliceX)));
+              const sy = Math.max(0, Math.min(reframePlan.frameH - sh_, Math.round(g.cam.sliceY)));
+              const vf = `crop=${sw}:${sh_}:${sx}:${sy},scale=1080:1920,setsar=1`;
+              await sh("ffmpeg", ["-y", "-ss", g.tStart.toFixed(3), "-i", cutFile, "-t", dur.toFixed(3), "-vf", vf, ...encArgs, seg]);
+              sceneFiles.push(seg);
+              k++;
+            }
+            app.log.info({ scene: i, t0: +t0.toFixed(2), t1: +t1.toFixed(2), micro_segments: groups.length, trackIds: [...new Set(groups.map((g) => g.trackId))] }, "reframe v2: plano aplicado");
+            planned = true;
+          }
+        } catch (err) {
+          app.log.warn({ err: err?.message, scene: i }, "reframe plan render falhou, caindo pro legado");
+        }
+      }
+
+      if (planned) continue;
+
+      // Legacy path: buildSceneFilter (split nativo / stack / pip / full estático)
       const vf = buildSceneFilter(sc, i, aw, ah, speakerMap, sceneCtx);
       if (vf.requestedLayout && vf.layout && vf.requestedLayout !== vf.layout) {
         app.log.info({ scene: i, from: vf.requestedLayout, to: vf.layout }, "layout dividido bloqueado: sem pessoas distintas suficientes");
       }
       const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
       const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
-      const encArgs = [
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
-        "-r", "30", "-pix_fmt", "yuv420p",
-        sceneFile,
-      ];
+      const encArgsFile = [...encArgs, sceneFile];
       try {
         if (vf.complex) {
           await sh("ffmpeg", [
             ...baseArgs,
             "-filter_complex", vf.filter,
             "-map", "[v]", "-map", "0:a?",
-            ...encArgs,
+            ...encArgsFile,
           ]);
         } else {
-          await sh("ffmpeg", [...baseArgs, "-vf", vf.filter, ...encArgs]);
+          await sh("ffmpeg", [...baseArgs, "-vf", vf.filter, ...encArgsFile]);
         }
         sceneFiles.push(sceneFile);
       } catch (err) {
         app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
-        // fallback: full centrado no rosto real (se tracker rodou) ou coluna
         let fCx = 480;
         if (track?.w) {
           const raw = pickFocusCx(track, sc.t, sc.t + sc.dur, sceneCtx.prevCxRaw, sceneCtx.diar);
@@ -1281,7 +1339,7 @@ async function processJob(job) {
           fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;
         }
         const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, Math.min(1312, fCx - 304))}:0,scale=1080:1920,setsar=1`;
-        await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgs]);
+        await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgsFile]);
         sceneFiles.push(sceneFile);
       }
     }

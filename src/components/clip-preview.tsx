@@ -40,6 +40,7 @@ export function ClipPreview({
   controlledPlaying,
   onTimeUpdate,
   className,
+  renderedUrl,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hovering, setHovering] = useState(false);

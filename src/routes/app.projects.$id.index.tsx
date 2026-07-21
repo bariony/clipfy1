@@ -272,7 +272,7 @@ function ProjectWorkspace() {
   function pickFile(file: File | null) {
     if (!file) return;
     if (!file.type.startsWith("video/")) return toast.error("Escolha um arquivo de vídeo.");
-    if (file.size > MAX_FILE_SIZE) return toast.error("Máx 500MB.");
+    if (file.size > MAX_FILE_SIZE) return toast.error("Máx 2GB.");
     setSelectedFile(file);
   }
 

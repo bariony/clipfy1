@@ -59,7 +59,7 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         // Confirma que o projeto existe (job_id = project_id)
         const { data: project, error: projErr } = await supabaseAdmin
           .from("projects")
-          .select("id, user_id, description, target_clip_count, language, status, active_transcribe_job_id")
+          .select("id, user_id, description, target_clip_count, min_clip_seconds, max_clip_seconds, language, status, active_transcribe_job_id")
           .eq("id", parsed.job_id)
           .maybeSingle();
         if (projErr) return new Response(projErr.message, { status: 500 });
@@ -165,6 +165,8 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
             segments: flatSegs,
             brief: project.description,
             targetCount: project.target_clip_count,
+            minClipSeconds: project.min_clip_seconds,
+            maxClipSeconds: project.max_clip_seconds,
             apiKey: key,
             origin: callbackOrigin,
           });

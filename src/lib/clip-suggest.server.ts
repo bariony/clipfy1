@@ -7,6 +7,16 @@ import type { Database } from "@/integrations/supabase/types";
 
 export type Seg = { text: string; start: number; end: number };
 
+type ClipCandidate = {
+  title: string;
+  hook: string;
+  start_seconds: number;
+  end_seconds: number;
+  virality_score: number;
+  transcript_excerpt: string;
+  score_reason?: string;
+};
+
 function textToSyntheticSegments(fullText: string): Seg[] {
   const sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [fullText];
   return sentences
@@ -19,7 +29,44 @@ function textToSyntheticSegments(fullText: string): Seg[] {
     .filter((s) => s.text.length > 0);
 }
 
-function fallbackClips(fullText: string, segments: Seg[], targetCount: number) {
+function normalizeClipBounds(params: {
+  start: number;
+  end: number;
+  minClipSeconds?: number | null;
+  maxClipSeconds?: number | null;
+}) {
+  const floor = Math.max(12, Math.min(45, Number(params.minClipSeconds ?? 18)));
+  const ceiling = Math.max(floor + 8, Math.min(90, Number(params.maxClipSeconds ?? 60)));
+  const start = Math.max(0, Math.floor(params.start));
+  const naturalEnd = Math.max(start + floor, Math.ceil(params.end));
+  return {
+    start,
+    end: Math.max(start + floor, Math.min(naturalEnd, start + ceiling)),
+    min: floor,
+    max: ceiling,
+  };
+}
+
+function scoreExcerpt(excerpt: string, rank: number) {
+  const text = excerpt.toLowerCase();
+  let score = 48;
+  if (/[?!]/.test(excerpt)) score += 6;
+  if (/nunca|ningu[eé]m|segredo|absurdo|choc|pol[eê]mica|dinheiro|milh[oõ]es|erro|verdade|medo|risco|viral|foda|caralho/i.test(text)) score += 14;
+  if (/mas|s[oó] que|porque|ent[aã]o|resultado|aprendi|descobri/i.test(text)) score += 8;
+  const words = excerpt.split(/\s+/).filter(Boolean).length;
+  if (words >= 70 && words <= 160) score += 8;
+  if (words < 25) score -= 10;
+  score -= rank * 3;
+  return Math.max(35, Math.min(87, Math.round(score)));
+}
+
+function fallbackClips(
+  fullText: string,
+  segments: Seg[],
+  targetCount: number,
+  minClipSeconds?: number | null,
+  maxClipSeconds?: number | null,
+): ClipCandidate[] {
   const cleanText = fullText.replace(/\s+/g, " ").trim();
   const available = segments.length > 0 ? segments : textToSyntheticSegments(cleanText);
   const clipCount = Math.max(3, Math.min(targetCount || 6, 8, available.length));
@@ -27,19 +74,25 @@ function fallbackClips(fullText: string, segments: Seg[], targetCount: number) {
 
   return Array.from({ length: clipCount }, (_, index) => {
     const startIndex = Math.min(index * stride, available.length - 1);
-    const window = available.slice(startIndex, Math.min(available.length, startIndex + Math.max(6, stride)));
-    const start = Math.floor(window[0]?.start ?? index * 45);
-    const end = Math.max(start + 20, Math.ceil(window.at(-1)?.end ?? start + 45));
+    const variableWindow = Math.max(3, Math.min(10, stride + (index % 4) + 2));
+    const window = available.slice(startIndex, Math.min(available.length, startIndex + variableWindow));
+    const bounds = normalizeClipBounds({
+      start: window[0]?.start ?? index * 40,
+      end: window.at(-1)?.end ?? index * 40 + 35 + (index % 4) * 7,
+      minClipSeconds,
+      maxClipSeconds,
+    });
     const excerpt = window.map((s) => s.text).join(" ").replace(/\s+/g, " ").slice(0, 420);
     const words = excerpt.split(" ").filter(Boolean);
     const title = words.slice(0, 8).join(" ").replace(/[.,!?;:]+$/g, "") || `Corte recomendado ${index + 1}`;
     return {
       title: title.length > 10 ? title : `Corte recomendado ${index + 1}`,
       hook: excerpt.slice(0, 150),
-      start_seconds: start,
-      end_seconds: Math.min(end, start + 75),
-      virality_score: Math.max(62, 88 - index * 4),
+      start_seconds: bounds.start,
+      end_seconds: bounds.end,
+      virality_score: scoreExcerpt(excerpt, index),
       transcript_excerpt: excerpt,
+      score_reason: "Fallback heurístico: emoção, clareza do hook e densidade do trecho.",
     };
   });
 }
@@ -52,6 +105,8 @@ export async function generateAndSaveClipSuggestions({
   segments,
   brief,
   targetCount,
+  minClipSeconds,
+  maxClipSeconds,
   apiKey,
   origin,
 }: {
@@ -62,17 +117,20 @@ export async function generateAndSaveClipSuggestions({
   segments: Seg[];
   brief: string | null;
   targetCount: number | null;
+  minClipSeconds?: number | null;
+  maxClipSeconds?: number | null;
   apiKey: string;
   origin?: string;
 }) {
   const wanted = Math.max(3, Math.min(targetCount ?? 6, 10));
+  const bounds = normalizeClipBounds({ start: 0, end: 60, minClipSeconds, maxClipSeconds });
   const timeline = (segments.length > 0 ? segments : textToSyntheticSegments(fullText))
     .slice(0, 220)
     .map((s) => `[${Math.round(s.start)}-${Math.round(s.end)}s] ${s.text}`)
     .join("\n")
     .slice(0, 18000);
 
-  let clips = fallbackClips(fullText, segments, wanted);
+  let clips = fallbackClips(fullText, segments, wanted, minClipSeconds, maxClipSeconds);
 
   try {
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -90,11 +148,19 @@ export async function generateAndSaveClipSuggestions({
           {
             role: "system",
             content:
-              'Você é o motor de cortes virais do Clipfy. Responda somente JSON válido no formato {"clips":[...]}. Escolha trechos com começo e fim claros, potencial de retenção e títulos curtos em português.',
+              `Você é o motor de cortes virais do Clipfy. Responda somente JSON válido no formato {"clips":[{"title":"","hook":"","start_seconds":0,"end_seconds":0,"virality_score":0,"score_reason":"","transcript_excerpt":""}]}.
+
+Regras profissionais:
+- NÃO use duração fixa. Cada corte deve ter duração natural diferente.
+- Duração alvo: ${bounds.min}-${bounds.max}s. Prefira 22-58s quando for suficiente; só chegue perto do máximo se a história realmente precisar.
+- Corte começa no gancho, sem introdução morta, e termina numa conclusão/virada clara.
+- Score 0-100 deve ser honesto e raro: 95+ só para momento excepcional; 85-94 muito forte; 70-84 bom; abaixo de 70 é mediano. Não dê 88 para qualquer trecho.
+- Varie os scores entre os cortes de acordo com força real do hook, emoção, controvérsia, novidade, clareza e retenção.
+- Títulos curtos em português, sem clickbait mentiroso.`,
           },
           {
             role: "user",
-            content: `Objetivo do usuário: ${brief || "identificar os melhores cortes virais"}\nQuantidade desejada: ${wanted}\nTimeline com timestamps:\n${timeline}`,
+            content: `Objetivo do usuário: ${brief || "identificar os melhores cortes virais"}\nQuantidade desejada: ${wanted}\nDuração mínima/máxima por corte: ${bounds.min}-${bounds.max}s\nTimeline com timestamps:\n${timeline}`,
           },
         ],
       }),
@@ -110,19 +176,31 @@ export async function generateAndSaveClipSuggestions({
           start_seconds?: number;
           end_seconds?: number;
           virality_score?: number;
+          score_reason?: string;
           transcript_excerpt?: string;
         }>;
       };
       const aiClips = (parsed.clips ?? [])
-        .map((clip, index) => ({
-          title: String(clip.title || `Corte recomendado ${index + 1}`).slice(0, 140),
-          hook: String(clip.hook || clip.transcript_excerpt || "").slice(0, 260),
-          start_seconds: Math.max(0, Math.floor(Number(clip.start_seconds) || 0)),
-          end_seconds: Math.max(1, Math.ceil(Number(clip.end_seconds) || 0)),
-          virality_score: Math.max(1, Math.min(100, Math.round(Number(clip.virality_score) || 70))),
-          transcript_excerpt: String(clip.transcript_excerpt || clip.hook || "").slice(0, 800),
-        }))
-        .filter((clip) => clip.end_seconds > clip.start_seconds + 5)
+        .map((clip, index): ClipCandidate => {
+          const bounded = normalizeClipBounds({
+            start: Number(clip.start_seconds) || 0,
+            end: Number(clip.end_seconds) || 0,
+            minClipSeconds,
+            maxClipSeconds,
+          });
+          const excerpt = String(clip.transcript_excerpt || clip.hook || "").slice(0, 800);
+          const rawScore = Math.round(Number(clip.virality_score) || scoreExcerpt(excerpt, index));
+          return {
+            title: String(clip.title || `Corte recomendado ${index + 1}`).slice(0, 140),
+            hook: String(clip.hook || clip.transcript_excerpt || "").slice(0, 260),
+            start_seconds: bounded.start,
+            end_seconds: bounded.end,
+            virality_score: Math.max(1, Math.min(100, rawScore)),
+            transcript_excerpt: excerpt,
+            score_reason: String(clip.score_reason || "Análise de hook, retenção e intensidade.").slice(0, 220),
+          };
+        })
+        .filter((clip) => clip.end_seconds > clip.start_seconds + Math.max(8, bounds.min - 2))
         .slice(0, wanted);
       if (aiClips.length > 0) clips = aiClips;
     }
@@ -141,7 +219,7 @@ export async function generateAndSaveClipSuggestions({
     transcript_excerpt: clip.transcript_excerpt || null,
     status: "suggested" as const,
     aspect_ratio: "9:16",
-    metadata: { generated_by: "clipfy-mvp" } as never,
+    metadata: { generated_by: "clipfy-ai-v2", score_reason: clip.score_reason ?? null } as never,
   }));
 
   const { data: inserted, error } = await supabase
@@ -149,6 +227,18 @@ export async function generateAndSaveClipSuggestions({
     .insert(rows)
     .select("id, start_seconds, end_seconds, transcript_excerpt");
   if (error) throw new Error(error.message);
+
+  // Libera a UI assim que os cortes existem. Scene plan e auto-render são
+  // enriquecimentos posteriores; se demorarem, o projeto não fica preso em 85%.
+  await supabase
+    .from("projects")
+    .update({
+      status: "ready",
+      error_message: null,
+      transcribe_progress: 100,
+      active_transcribe_job_id: null,
+    })
+    .eq("id", projectId);
 
   // Segunda passada: gera scene_plan (edição dinâmica) pra cada clipe.
   // Erros aqui não invalidam os clips — o plano é enriquecimento opcional.

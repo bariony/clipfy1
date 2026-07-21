@@ -92,7 +92,7 @@ export function ClipCard({
         {score != null && (
           <div
             className={cn(
-              "absolute left-2 top-2 flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur",
+              "absolute left-2 top-2 flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur",
               score >= 75
                 ? "border-primary/50 bg-primary/20 text-primary"
                 : score >= 50
@@ -101,7 +101,7 @@ export function ClipCard({
             )}
           >
             <Sparkles className="size-3" />
-            {score}
+            Viral {score}/100
           </div>
         )}
 

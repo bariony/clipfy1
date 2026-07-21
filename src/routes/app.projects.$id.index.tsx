@@ -243,6 +243,20 @@ function ProjectWorkspace() {
       toast.error("Não consegui deletar", { description: err instanceof Error ? err.message : "" }),
   });
 
+  useEffect(() => {
+    if (!project || project.status !== "analyzing" || clips.length === 0) return;
+    supabase
+      .from("projects")
+      .update({
+        status: "ready",
+        error_message: null,
+        transcribe_progress: 100,
+        active_transcribe_job_id: null,
+      })
+      .eq("id", project.id)
+      .then(() => invalidate());
+  }, [project?.id, project?.status, clips.length]);
+
   if (!project) return null;
 
   const hasUpload = Boolean(project.storage_path);
@@ -263,20 +277,6 @@ function ProjectWorkspace() {
       : project.status === "analyzing"
       ? Math.max(85, project.transcribe_progress ?? 85)
       : Math.max(1, Math.min(100, project.transcribe_progress ?? 1));
-
-  useEffect(() => {
-    if (!project || project.status !== "analyzing" || clips.length === 0) return;
-    supabase
-      .from("projects")
-      .update({
-        status: "ready",
-        error_message: null,
-        transcribe_progress: 100,
-        active_transcribe_job_id: null,
-      })
-      .eq("id", project.id)
-      .then(() => invalidate());
-  }, [project?.id, project?.status, clips.length]);
 
   const source: "upload" | "youtube" = hasYoutube ? "youtube" : "upload";
   const sampleClip = clips[0];

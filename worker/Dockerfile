@@ -10,6 +10,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
       unzip \
       ca-certificates \
+      build-essential \
+      libcairo2 \
+      libcairo2-dev \
+      libpango-1.0-0 \
+      libpango1.0-dev \
+      libjpeg62-turbo \
+      libjpeg-dev \
+      libgif7 \
+      libgif-dev \
+      librsvg2-2 \
+      librsvg2-dev \
       fonts-dejavu-core \
       fontconfig \
     && python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider \

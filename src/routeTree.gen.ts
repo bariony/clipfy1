@@ -21,6 +21,7 @@ import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.inde
 import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
 import { Route as ApiPublicTranscribeCallbackRouteImport } from './routes/api/public/transcribe-callback'
 import { Route as ApiPublicRenderUploadRouteImport } from './routes/api/public/render-upload'
+import { Route as ApiPublicRenderDebugUploadRouteImport } from './routes/api/public/render-debug-upload'
 import { Route as ApiPublicRenderCallbackRouteImport } from './routes/api/public/render-callback'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/app.projects.$id.index'
 
@@ -85,6 +86,12 @@ const ApiPublicRenderUploadRoute = ApiPublicRenderUploadRouteImport.update({
   path: '/api/public/render-upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRenderDebugUploadRoute =
+  ApiPublicRenderDebugUploadRouteImport.update({
+    id: '/api/public/render-debug-upload',
+    path: '/api/public/render-debug-upload',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicRenderCallbackRoute = ApiPublicRenderCallbackRouteImport.update({
   id: '/api/public/render-callback',
   path: '/api/public/render-callback',
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
+  '/api/public/render-debug-upload': typeof ApiPublicRenderDebugUploadRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
   '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
@@ -120,6 +128,7 @@ export interface FileRoutesByTo {
   '/app/new': typeof AppNewRoute
   '/app': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
+  '/api/public/render-debug-upload': typeof ApiPublicRenderDebugUploadRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
   '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects': typeof AppProjectsIndexRoute
@@ -136,6 +145,7 @@ export interface FileRoutesById {
   '/app/projects': typeof AppProjectsRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
+  '/api/public/render-debug-upload': typeof ApiPublicRenderDebugUploadRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
   '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/app/projects'
     | '/app/'
     | '/api/public/render-callback'
+    | '/api/public/render-debug-upload'
     | '/api/public/render-upload'
     | '/api/public/transcribe-callback'
     | '/app/projects/$id'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app'
     | '/api/public/render-callback'
+    | '/api/public/render-debug-upload'
     | '/api/public/render-upload'
     | '/api/public/transcribe-callback'
     | '/app/projects'
@@ -183,6 +195,7 @@ export interface FileRouteTypes {
     | '/app/projects'
     | '/app/'
     | '/api/public/render-callback'
+    | '/api/public/render-debug-upload'
     | '/api/public/render-upload'
     | '/api/public/transcribe-callback'
     | '/app/projects/$id'
@@ -196,6 +209,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ApiPublicRenderCallbackRoute: typeof ApiPublicRenderCallbackRoute
+  ApiPublicRenderDebugUploadRoute: typeof ApiPublicRenderDebugUploadRoute
   ApiPublicRenderUploadRoute: typeof ApiPublicRenderUploadRoute
   ApiPublicTranscribeCallbackRoute: typeof ApiPublicTranscribeCallbackRoute
 }
@@ -286,6 +300,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRenderUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/render-debug-upload': {
+      id: '/api/public/render-debug-upload'
+      path: '/api/public/render-debug-upload'
+      fullPath: '/api/public/render-debug-upload'
+      preLoaderRoute: typeof ApiPublicRenderDebugUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/render-callback': {
       id: '/api/public/render-callback'
       path: '/api/public/render-callback'
@@ -351,6 +372,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ApiPublicRenderCallbackRoute: ApiPublicRenderCallbackRoute,
+  ApiPublicRenderDebugUploadRoute: ApiPublicRenderDebugUploadRoute,
   ApiPublicRenderUploadRoute: ApiPublicRenderUploadRoute,
   ApiPublicTranscribeCallbackRoute: ApiPublicTranscribeCallbackRoute,
 }

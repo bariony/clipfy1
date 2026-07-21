@@ -652,36 +652,19 @@ async function processTranscribeJob(job) {
     }
     await cb({ status: "processing", progress: 40 });
 
-    const wav = path.join(jobDir, "audio.wav");
-    await sh("ffmpeg", ["-y", "-i", mediaFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]);
-    await cb({ status: "processing", progress: 60 });
+    await cb({ status: "processing", progress: 55 });
 
-    const duration = await ffprobeDuration(wav).catch(() => null);
-
-    const tr = await groq.audio.transcriptions.create({
-      file: createReadStream(wav),
-      model: "whisper-large-v3-turbo",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment", "word"],
-      language: language && language !== "auto" ? language : undefined,
+    const transcript = await transcribeMediaInChunks(mediaFile, jobDir, language, async (progress) => {
+      await cb({ status: "processing", progress });
     });
-
-    // Constrói segmentos com palavras para karaokê
-    const words = (tr.words ?? []).map((w) => ({ word: w.word, start: w.start, end: w.end }));
-    const segments = (tr.segments ?? []).map((s) => ({
-      text: String(s.text ?? "").trim(),
-      start: Number(s.start ?? 0),
-      end: Number(s.end ?? 0),
-      words: words.filter((w) => w.start >= s.start && w.end <= s.end + 0.05),
-    }));
 
     await cb({
       status: "completed",
       progress: 100,
-      language: tr.language ?? language ?? null,
-      duration,
-      full_text: String(tr.text ?? "").trim(),
-      segments,
+      language: transcript.language ?? language ?? null,
+      duration: transcript.duration,
+      full_text: transcript.full_text,
+      segments: transcript.segments,
     });
   } catch (err) {
     app.log.error({ err, job_id }, "transcribe falhou");

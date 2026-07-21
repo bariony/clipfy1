@@ -184,27 +184,22 @@ export function StylePanel({
             </div>
           </Section>
 
-          <Section title="Legenda animada">
-            <div className="grid grid-cols-2 gap-2">
+          <Section
+            title="Legenda animada"
+            hint={`${CAPTION_TEMPLATES.length} presets · preview real ao vivo`}
+          >
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {CAPTION_TEMPLATES.map((tpl) => (
-                <button
+                <CaptionPresetCard
                   key={tpl.slug}
-                  type="button"
-                  onClick={() => setTemplate(tpl.slug)}
-                  className={cn(
-                    "flex flex-col items-start rounded-xl border p-3 text-left transition-colors",
-                    template === tpl.slug ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/40",
-                  )}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span className="text-sm font-bold">{tpl.name}</span>
-                    {template === tpl.slug && <Check className="size-4 text-primary" />}
-                  </div>
-                  <span className="mt-0.5 text-[11px] text-muted-foreground">{tpl.description}</span>
-                </button>
+                  template={tpl}
+                  selected={template === tpl.slug}
+                  onSelect={() => setTemplate(tpl.slug)}
+                />
               ))}
             </div>
           </Section>
+
 
           <div className="flex justify-end gap-2">
             <Button

@@ -176,7 +176,7 @@ export function ClipCard({
               </>
             ) : (
               <>
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {progressLabel}
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {statusLabel}
               </>
             )}
           </Button>

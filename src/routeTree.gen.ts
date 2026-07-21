@@ -19,6 +19,7 @@ import { Route as AppNewRouteImport } from './routes/app.new'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppProjectsIndexRouteImport } from './routes/app.projects.index'
 import { Route as AppProjectsIdRouteImport } from './routes/app.projects.$id'
+import { Route as ApiPublicTranscribeCallbackRouteImport } from './routes/api/public/transcribe-callback'
 import { Route as ApiPublicRenderUploadRouteImport } from './routes/api/public/render-upload'
 import { Route as ApiPublicRenderCallbackRouteImport } from './routes/api/public/render-callback'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/app.projects.$id.index'
@@ -73,6 +74,12 @@ const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppProjectsRoute,
 } as any)
+const ApiPublicTranscribeCallbackRoute =
+  ApiPublicTranscribeCallbackRouteImport.update({
+    id: '/api/public/transcribe-callback',
+    path: '/api/public/transcribe-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicRenderUploadRoute = ApiPublicRenderUploadRouteImport.update({
   id: '/api/public/render-upload',
   path: '/api/public/render-upload',
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
+  '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
@@ -113,6 +121,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
+  '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects': typeof AppProjectsIndexRoute
   '/app/projects/$id': typeof AppProjectsIdIndexRoute
 }
@@ -128,6 +137,7 @@ export interface FileRoutesById {
   '/app/': typeof AppIndexRoute
   '/api/public/render-callback': typeof ApiPublicRenderCallbackRoute
   '/api/public/render-upload': typeof ApiPublicRenderUploadRoute
+  '/api/public/transcribe-callback': typeof ApiPublicTranscribeCallbackRoute
   '/app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/app/projects/': typeof AppProjectsIndexRoute
   '/app/projects/$id/': typeof AppProjectsIdIndexRoute
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/api/public/render-callback'
     | '/api/public/render-upload'
+    | '/api/public/transcribe-callback'
     | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/api/public/render-callback'
     | '/api/public/render-upload'
+    | '/api/public/transcribe-callback'
     | '/app/projects'
     | '/app/projects/$id'
   id:
@@ -172,6 +184,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/api/public/render-callback'
     | '/api/public/render-upload'
+    | '/api/public/transcribe-callback'
     | '/app/projects/$id'
     | '/app/projects/'
     | '/app/projects/$id/'
@@ -184,6 +197,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   ApiPublicRenderCallbackRoute: typeof ApiPublicRenderCallbackRoute
   ApiPublicRenderUploadRoute: typeof ApiPublicRenderUploadRoute
+  ApiPublicTranscribeCallbackRoute: typeof ApiPublicTranscribeCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -258,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdRouteImport
       parentRoute: typeof AppProjectsRoute
     }
+    '/api/public/transcribe-callback': {
+      id: '/api/public/transcribe-callback'
+      path: '/api/public/transcribe-callback'
+      fullPath: '/api/public/transcribe-callback'
+      preLoaderRoute: typeof ApiPublicTranscribeCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/render-upload': {
       id: '/api/public/render-upload'
       path: '/api/public/render-upload'
@@ -331,6 +352,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   ApiPublicRenderCallbackRoute: ApiPublicRenderCallbackRoute,
   ApiPublicRenderUploadRoute: ApiPublicRenderUploadRoute,
+  ApiPublicTranscribeCallbackRoute: ApiPublicTranscribeCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

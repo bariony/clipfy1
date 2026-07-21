@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { sanitizeStoredProcessingError } from "./processing-errors";
 
 const Input = z.object({ projectId: z.string().uuid() });
 
@@ -72,10 +73,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
         });
         if (!res.ok) {
           const detail = await res.text().catch(() => "");
-          throw new Error(`Worker recusou (${res.status}): ${detail.slice(0, 200)}`);
+          const cleanDetail = sanitizeStoredProcessingError(detail) ?? detail.slice(0, 200);
+          throw new Error(`Worker recusou (${res.status}): ${cleanDetail}`);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Falha ao contatar worker";
+        const rawMessage = err instanceof Error ? err.message : "Falha ao contatar worker";
+        const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
         await supabase
           .from("projects")
           .update({ status: "failed", error_message: message.slice(0, 500) })
@@ -191,7 +194,8 @@ export const transcribeProject = createServerFn({ method: "POST" })
 
       return { ok: true as const, dispatched: false as const, characters: fullText.length, clips: clipCount };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Transcription failed";
+      const rawMessage = err instanceof Error ? err.message : "Transcription failed";
+      const message = sanitizeStoredProcessingError(rawMessage) ?? rawMessage;
       await supabase
         .from("projects")
         .update({ status: "failed", error_message: message.slice(0, 500) })

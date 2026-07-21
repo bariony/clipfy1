@@ -38,6 +38,7 @@ import type { ProjectStatus } from "@/lib/project-status";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { transcribeProject } from "@/lib/transcribe.functions";
+import { formatProcessingError, isYoutubeBotCheckError } from "@/lib/processing-errors";
 
 import { DEFAULT_TEMPLATE_SLUG, type ProjectPreferences } from "@/lib/caption-templates";
 
@@ -193,6 +194,10 @@ function ProjectWorkspace() {
   const processFn = useServerFn(transcribeProject);
   const processSource = useMutation({
     mutationFn: () => processFn({ data: { projectId: id } }),
+    onMutate: () => {
+      qc.setQueryData(["projects", idOrSlug], project ? { ...project, status: "transcribing", error_message: null } : project);
+      qc.setQueryData(["projects", id], project ? { ...project, status: "transcribing", error_message: null } : project);
+    },
     onSuccess: () => {
       invalidate();
     },
@@ -230,6 +235,8 @@ function ProjectWorkspace() {
 
   const preferences = (project.preferences ?? {}) as ProjectPreferences;
   const templateSlug = preferences.caption_template ?? DEFAULT_TEMPLATE_SLUG;
+  const visibleError = formatProcessingError(project.error_message);
+  const canRetryFromError = hasSource && project.status === "failed";
 
   const source: "upload" | "youtube" = hasYoutube ? "youtube" : "upload";
   const sampleClip = clips[0];
@@ -278,9 +285,20 @@ function ProjectWorkspace() {
         <h1 className="text-3xl font-extrabold tracking-tight">{project.title}</h1>
       </div>
 
-      {project.error_message && (
-        <div className="mb-6 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-          {project.error_message}
+      {visibleError && (
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+          <span>{visibleError}</span>
+          {canRetryFromError && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 bg-background/40 text-destructive hover:bg-destructive/10"
+              onClick={() => processSource.mutate()}
+              disabled={isProcessing}
+            >
+              <Sparkles className="mr-2 size-3.5" /> Tentar novamente
+            </Button>
+          )}
         </div>
       )}
 

@@ -228,6 +228,18 @@ Regras profissionais:
     .select("id, start_seconds, end_seconds, transcript_excerpt");
   if (error) throw new Error(error.message);
 
+  // Libera a UI assim que os cortes existem. Scene plan e auto-render são
+  // enriquecimentos posteriores; se demorarem, o projeto não fica preso em 85%.
+  await supabase
+    .from("projects")
+    .update({
+      status: "ready",
+      error_message: null,
+      transcribe_progress: 100,
+      active_transcribe_job_id: null,
+    })
+    .eq("id", projectId);
+
   // Segunda passada: gera scene_plan (edição dinâmica) pra cada clipe.
   // Erros aqui não invalidam os clips — o plano é enriquecimento opcional.
   try {

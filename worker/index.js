@@ -853,7 +853,7 @@ async function processJob(job) {
     const sceneFiles = [];
     for (let i = 0; i < plannedScenes.length; i++) {
       const sc = plannedScenes[i];
-      const vf = buildSceneFilter(sc, i, aw, ah, speakerMap);
+      const vf = buildSceneFilter(sc, i, aw, ah, speakerMap, sceneCtx);
       const sceneFile = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
       const baseArgs = ["-y", "-ss", String(sc.t.toFixed(3)), "-i", cutFile, "-t", String(sc.dur.toFixed(3))];
       const encArgs = [

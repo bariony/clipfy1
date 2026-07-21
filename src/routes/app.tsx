@@ -29,13 +29,7 @@ function AppLayout() {
   }, [loading, session, navigate, pathname]);
 
   if (loading || !session) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-background">
-        <div className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          // authenticating
-        </div>
-      </div>
-    );
+    return <div className="min-h-screen bg-background" />;
   }
 
   return (

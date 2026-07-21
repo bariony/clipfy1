@@ -136,7 +136,7 @@ function ProjectWorkspace() {
     },
     onSuccess: () => {
       invalidate();
-      toast.success("URL salva. Clique em Gerar cortes.");
+      void 0;
     },
     onError: (err: unknown) =>
       toast.error("Não consegui salvar", { description: err instanceof Error ? err.message : "" }),
@@ -177,12 +177,12 @@ function ProjectWorkspace() {
       setSelectedFile(null);
       setUploadProgress(0);
       invalidate();
-      toast.success("Vídeo anexado. Configure o estilo e gere os cortes.");
+      void 0;
     },
     onError: (err: unknown) => {
       invalidate();
       const message = err instanceof Error ? err.message : "Upload falhou";
-      if (message === "Upload cancelado.") toast.info("Upload cancelado");
+      if (message === "Upload cancelado.") void 0;
       else toast.error("Upload falhou", { description: message });
     },
   });
@@ -190,18 +190,10 @@ function ProjectWorkspace() {
   const processFn = useServerFn(transcribeProject);
   const processSource = useMutation({
     mutationFn: () => processFn({ data: { projectId: id } }),
-    onSuccess: (res) => {
+    onSuccess: () => {
       invalidate();
-      if (res.dispatched) {
-        toast.success("Baixando e transcrevendo no servidor…", {
-          description: "Isso leva de 30s a alguns minutos dependendo do tamanho do vídeo.",
-        });
-      } else {
-        toast.success("Cortes gerados", {
-          description: `${res.clips} sugestões a partir de ${res.characters.toLocaleString()} caracteres.`,
-        });
-      }
     },
+
     onError: (err: unknown) => {
       invalidate();
       toast.error("Processamento falhou", { description: err instanceof Error ? err.message : "" });
@@ -212,7 +204,7 @@ function ProjectWorkspace() {
   const exportClip = useMutation({
     mutationFn: (clipId: string) => enqueueRender({ data: { clipId } }),
     onSuccess: (_, clipId) => {
-      toast.success("Exportação enfileirada.");
+      void 0;
       qc.invalidateQueries({ queryKey: ["render-job", clipId] });
     },
     onError: (err: unknown) =>
@@ -226,7 +218,7 @@ function ProjectWorkspace() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Projeto deletado");
+      void 0;
       navigate({ to: "/app/projects" });
     },
     onError: (err: unknown) =>

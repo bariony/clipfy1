@@ -58,7 +58,7 @@ function ResetPasswordPage() {
       toast.error(error.message);
       return;
     }
-    toast.success("Senha atualizada. Redirecionando...");
+    void 0;
     setTimeout(() => navigate({ to: "/app/dashboard" }), 800);
   }
 

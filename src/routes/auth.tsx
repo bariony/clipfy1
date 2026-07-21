@@ -65,14 +65,11 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        toast.success("Account created", {
-          description: "Check your email if confirmation is required.",
-        });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        toast.success("Signed in");
       }
+
       navigate({ to: destination, replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Authentication failed";
@@ -203,7 +200,7 @@ function AuthPage() {
                         redirectTo: `${window.location.origin}/reset-password`,
                       });
                       if (error) toast.error(error.message);
-                      else toast.success("Reset link sent");
+                      else void 0;
                     }}
                   >
                     Forgot?

@@ -82,7 +82,7 @@ export function EditClipDrawer({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
       qc.invalidateQueries({ queryKey: ["clip", clip?.id] });
-      toast.success("Corte salvo");
+      void 0;
       onOpenChange(false);
     },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Falha ao salvar"),

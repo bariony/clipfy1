@@ -43,7 +43,7 @@ function NewProject() {
     onSuccess: (id) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      toast.success("Projeto criado", { description: "Agora adicione vídeo ou YouTube dentro do projeto." });
+      void 0;
       navigate({ to: "/app/projects/$id", params: { id } });
     },
     onError: (err: unknown) => {

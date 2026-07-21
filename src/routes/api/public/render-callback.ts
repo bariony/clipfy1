@@ -43,6 +43,17 @@ export const Route = createFileRoute("/api/public/render-callback")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+        const { data: currentJob, error: currentJobError } = await supabaseAdmin
+          .from("render_jobs")
+          .select("id, status")
+          .eq("id", parsed.job_id)
+          .maybeSingle();
+        if (currentJobError) return new Response(currentJobError.message, { status: 500 });
+        if (!currentJob) return new Response("Job not found", { status: 404 });
+        if (currentJob.status === "cancelled") {
+          return Response.json({ ok: true, stale: true });
+        }
+
         const update: {
           status: typeof parsed.status;
           worker_id?: string;

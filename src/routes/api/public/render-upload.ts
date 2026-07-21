@@ -37,11 +37,14 @@ export const Route = createFileRoute("/api/public/render-upload")({
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: job, error: jobError } = await supabaseAdmin
           .from("render_jobs")
-          .select("id, clip_id, edl")
+          .select("id, clip_id, edl, status")
           .eq("id", jobId)
           .maybeSingle();
         if (jobError) return new Response(jobError.message, { status: 500 });
         if (!job) return new Response("Job not found", { status: 404 });
+        if (job.status === "cancelled") {
+          return Response.json({ ok: true, stale: true });
+        }
 
         const edlOutput = (job.edl as { output?: { path?: string } } | null)?.output;
         if (edlOutput?.path !== outputPath) {

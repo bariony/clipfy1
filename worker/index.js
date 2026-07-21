@@ -1178,6 +1178,20 @@ async function processJob(job) {
     }
     await sendCallback({ job_id, status: "processing", progress: 55, worker_id: WORKER_ID });
 
+    // 2.7. Auto-Reframe v2 — plano global (tracks persistentes + speaker links
+    // + camera controller + framer cinematográfico). Substitui a antiga escolha
+    // por centroide+massa por cena.
+    let reframePlan = null;
+    try {
+      if (track?.tracks?.length) {
+        reframePlan = buildReframePlan({ track, turns: diar?.turns || [], log: app.log });
+      } else {
+        app.log.info("reframe: sem tracks persistentes, usando pipeline legado");
+      }
+    } catch (err) {
+      app.log.warn({ err: err?.message }, "reframe plan crashou (segue no legado)");
+    }
+
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
     // cadência automática alternando full/broll com zoom para dar vida.
@@ -1188,7 +1202,7 @@ async function processJob(job) {
     if (splitWindows.length) {
       app.log.info({ windows: splitWindows.map((w) => ({ t0: +w.t0.toFixed(2), t1: +w.t1.toFixed(2) })) }, "split-screen nativo detectado no material original");
     }
-    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false, plan: reframePlan };
 
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];

@@ -485,7 +485,7 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-pot-v2" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v3" }));
 app.get("/health", async () => ({
   ok: true,
   version: "youtube-rescue-v3",

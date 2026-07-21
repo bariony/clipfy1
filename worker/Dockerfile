@@ -25,7 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       librsvg2-dev \
       fonts-dejavu-core \
       fontconfig \
-    && python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider \
+    && python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider onnxruntime \
+    && mkdir -p /opt/models \
+    && curl -fsSL -o /opt/models/yolov10n-face.onnx https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov10n-face.onnx \
     && ln -sf /usr/local/bin/yt-dlp /usr/bin/yt-dlp \
     && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y \
     && git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-ytdlp-pot-provider \

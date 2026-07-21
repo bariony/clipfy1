@@ -40,6 +40,9 @@ APP_URL=https://clipfy1.lovable.app
 WORKER_ID=vps-hostinger-01
 CONCURRENCY=1
 PORT=3000
+# Opcional, só se o IP da VPS for bloqueado pelo YouTube mesmo com PO Token:
+# YTDLP_PROXY=http://usuario:senha@host:porta
+# YTDLP_COOKIES_B64=<cookies.txt em base64 da conta operacional do Clipfy>
 ```
 
 > ⚠️ **RENDER_WORKER_SECRET** precisa ser IDÊNTICO ao do app. Como o Lovable
@@ -60,8 +63,16 @@ para o app saber onde enfileirar jobs.
 ### 6. Testar
 ```bash
 curl http://179.197.231.80:3000/health
-# → {"ok":true,"running":0,"queued":0,"worker_id":"vps-hostinger-01"}
+# → {"ok":true,"version":"youtube-pot-v2","youtube":{"bgutil_pot":true,...}}
 ```
+
+Se `/health` não mostrar `version: "youtube-pot-v2"`, o EasyPanel ainda está
+rodando a imagem antiga. Faça rebuild/deploy sem cache.
+
+O worker já vem com PO Token provider e múltiplos clients do YouTube. Se um IP
+de VPS estiver marcado pelo YouTube, o fallback profissional é configurar
+`YTDLP_PROXY` ou cookies server-side de uma conta operacional sua; cliente final
+não baixa extensão nem fornece cookie.
 
 ## Endpoints
 

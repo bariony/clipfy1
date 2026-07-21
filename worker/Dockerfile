@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       python3 \
       python3-pip \
+      python3-opencv \
+      python3-numpy \
       curl \
       unzip \
       ca-certificates \
@@ -38,6 +40,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY index.js ./
+COPY face_track.py ./
 
 ENV NODE_ENV=production \
     PORT=8080 \

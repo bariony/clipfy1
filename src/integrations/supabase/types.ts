@@ -240,6 +240,7 @@ export type Database = {
         Row: {
           active_transcribe_job_id: string | null
           created_at: string
+          debug_reframe: boolean
           description: string | null
           duration_seconds: number | null
           error_message: string | null
@@ -264,6 +265,7 @@ export type Database = {
         Insert: {
           active_transcribe_job_id?: string | null
           created_at?: string
+          debug_reframe?: boolean
           description?: string | null
           duration_seconds?: number | null
           error_message?: string | null
@@ -288,6 +290,7 @@ export type Database = {
         Update: {
           active_transcribe_job_id?: string | null
           created_at?: string
+          debug_reframe?: boolean
           description?: string | null
           duration_seconds?: number | null
           error_message?: string | null
@@ -469,6 +472,7 @@ export type Database = {
         Returns: {
           active_transcribe_job_id: string | null
           created_at: string
+          debug_reframe: boolean
           description: string | null
           duration_seconds: number | null
           error_message: string | null

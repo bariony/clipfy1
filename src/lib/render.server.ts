@@ -74,6 +74,21 @@ export async function enqueueRenderForClip({
   uploadUrl.searchParams.set("sig", uploadSignature);
   const callbackUrl = new URL("/api/public/render-callback", publicOrigin);
 
+  // Sprint 1a — Modo diagnóstico de câmera. Assina ONE token que autoriza
+  // uploads em `<jobId>/debug/<filename>` no bucket renders.
+  const debugEnabled = Boolean((project as unknown as { debug_reframe?: boolean }).debug_reframe);
+  let debugBlock: null | { enabled: true; upload_base: string; expires: number; sig: string } = null;
+  if (debugEnabled) {
+    const debugSig = createHmac("sha256", workerSecret)
+      .update(`debug:${jobId}:${expires}`)
+      .digest("hex");
+    const base = new URL("/api/public/render-debug-upload", publicOrigin);
+    base.searchParams.set("job_id", jobId);
+    base.searchParams.set("expires", String(expires));
+    base.searchParams.set("sig", debugSig);
+    debugBlock = { enabled: true, upload_base: base.toString(), expires, sig: debugSig };
+  }
+
   const edl = {
     version: 1,
     source: { kind: project.source, url: sourceUrl },
@@ -99,6 +114,7 @@ export async function enqueueRenderForClip({
     layout: projectPreferences.layout_mode ?? "auto",
     caption_position: projectPreferences.caption_position ?? "bottom",
     callback_url: callbackUrl.toString(),
+    debug: debugBlock,
   };
 
   // Marca jobs antigos como substituídos

@@ -1,0 +1,1 @@
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS debug_reframe BOOLEAN NOT NULL DEFAULT false;

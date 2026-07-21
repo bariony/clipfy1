@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Loader2, Save, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, ChevronDown, ChevronUp, Loader2, Save, Sparkles, Bug } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -201,6 +201,8 @@ export function StylePanel({
           </Section>
 
 
+          <DebugReframeToggle projectId={projectId} />
+
           <div className="flex justify-end gap-2">
             <Button
               onClick={() => save.mutate()}
@@ -225,6 +227,71 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
         {hint && <div className="font-mono text-[10px] text-muted-foreground/70">{hint}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+function DebugReframeToggle({ projectId }: { projectId: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase
+      .from("projects")
+      .select("debug_reframe")
+      .eq("id", projectId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setEnabled(Boolean((data as { debug_reframe?: boolean } | null)?.debug_reframe));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const toggle = async () => {
+    if (enabled == null) return;
+    const next = !enabled;
+    setSaving(true);
+    const { error } = await supabase
+      .from("projects")
+      .update({ debug_reframe: next })
+      .eq("id", projectId);
+    setSaving(false);
+    if (error) {
+      toast.error("Falha ao alternar diagnóstico", { description: error.message });
+      return;
+    }
+    setEnabled(next);
+    toast.success(next ? "Diagnóstico ligado — próximo render vai gerar artefatos" : "Diagnóstico desligado");
+  };
+
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-background/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Bug className="mt-0.5 size-4 text-muted-foreground" />
+          <div>
+            <div className="text-xs font-bold">Diagnóstico de câmera (Sprint 1a)</div>
+            <div className="text-[11px] leading-tight text-muted-foreground">
+              Emite tracks_report / decisions / switches / links / camera_trace / diagnosis em
+              renders/&lt;job&gt;/debug/. Não afeta o resultado.
+            </div>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant={enabled ? "default" : "outline"}
+          size="sm"
+          onClick={toggle}
+          disabled={enabled == null || saving}
+          className="rounded-lg font-mono text-[11px] uppercase tracking-wide"
+        >
+          {saving ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
+          {enabled == null ? "…" : enabled ? "Ligado" : "Desligado"}
+        </Button>
+      </div>
     </div>
   );
 }

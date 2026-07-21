@@ -208,7 +208,6 @@ function ProjectWorkspace() {
     onMutate: () => {
       qc.setQueryData(
         ["projects", idOrSlug],
-        project ? { ...project, status: "transcribing", error_message: null } : project,
         project
           ? { ...project, status: "transcribing", error_message: null, transcribe_progress: 1 }
           : project,

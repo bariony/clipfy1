@@ -66,37 +66,119 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
-// Args comuns pro yt-dlp: cookies (file OU string via env), user-agent, retries,
-// e player-client android+web (contorna maioria dos bloqueios de bot).
-function ytdlpCommonArgs() {
-  const args = [
-    "--no-warnings",
-    "--retries", "3",
-    "--extractor-retries", "3",
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    "--extractor-args", "youtube:player_client=android,web",
-  ];
+function safeErrorMessage(err) {
+  return String(err?.message ?? err)
+    .replace(/--cookies\s+\S+/g, "--cookies [hidden]")
+    .slice(-900);
+}
+
+function ytdlpCookieArgs() {
+  const args = [];
   const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+  const cookiesBase64 = process.env.YTDLP_COOKIES_B64;
   const cookiesInline = process.env.YTDLP_COOKIES;
+
   if (cookiesFile && fs.existsSync(cookiesFile)) {
     args.push("--cookies", cookiesFile);
+  } else if (cookiesBase64) {
+    const p = "/tmp/yt-cookies.txt";
+    try {
+      fs.writeFileSync(p, Buffer.from(cookiesBase64, "base64").toString("utf8"), { mode: 0o600 });
+      args.push("--cookies", p);
+    } catch (err) {
+      app.log.warn({ err }, "YTDLP_COOKIES_B64 inválido");
+    }
   } else if (cookiesInline) {
     const p = "/tmp/yt-cookies.txt";
-    try { fs.writeFileSync(p, cookiesInline); args.push("--cookies", p); } catch {}
+    try {
+      fs.writeFileSync(p, cookiesInline, { mode: 0o600 });
+      args.push("--cookies", p);
+    } catch (err) {
+      app.log.warn({ err }, "YTDLP_COOKIES inválido");
+    }
   }
+
   return args;
+}
+
+function ytdlpRuntimeArgs() {
+  const runtimes = [];
+  if (fs.existsSync("/usr/local/bin/node")) runtimes.push("node:/usr/local/bin/node");
+  if (fs.existsSync("/usr/local/bin/deno")) runtimes.push("deno:/usr/local/bin/deno");
+  if (!runtimes.length) return [];
+  return ["--js-runtimes", runtimes.join(",")];
+}
+
+const YTDLP_CLIENT_STRATEGIES = [
+  { name: "android", extractor: "youtube:player_client=android" },
+  { name: "ios", extractor: "youtube:player_client=ios" },
+  { name: "mweb", extractor: "youtube:player_client=mweb" },
+  { name: "web_safari", extractor: "youtube:player_client=web_safari" },
+  { name: "tv_embedded", extractor: "youtube:player_client=tv_embedded" },
+  { name: "web_embedded", extractor: "youtube:player_client=web_embedded" },
+  { name: "default", extractor: "youtube:player_client=default" },
+];
+
+// Args comuns pro yt-dlp: runtime JS explícito, cookies server-side opcionais,
+// headers/retries e variações de player-client para aguentar bloqueios do YouTube.
+function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
+  const args = [
+    ...ytdlpRuntimeArgs(),
+    "--retries", "3",
+    "--extractor-retries", "3",
+    "--fragment-retries", "3",
+    "--force-ipv4",
+    "--geo-bypass",
+    "--no-check-certificates",
+    "--sleep-requests", "1",
+    "--sleep-interval", "1",
+    "--max-sleep-interval", "3",
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "--add-header", "Accept-Language:pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "--add-header", "Referer:https://www.youtube.com/",
+    "--extractor-args", strategy.extractor,
+    ...ytdlpCookieArgs(),
+  ];
+
+  if (process.env.YTDLP_PROXY) {
+    args.push("--proxy", process.env.YTDLP_PROXY);
+  }
+
+  return args;
+}
+
+async function ytdlpWithFallback(formatArgs, outputPath, url, label) {
+  let lastErr;
+  for (const strategy of YTDLP_CLIENT_STRATEGIES) {
+    try {
+      await sh("yt-dlp", [
+        ...ytdlpCommonArgs(strategy),
+        ...formatArgs,
+        "-o", outputPath,
+        url,
+      ]);
+      app.log.info({ strategy: strategy.name, label }, "yt-dlp ok");
+      return;
+    } catch (err) {
+      lastErr = err;
+      app.log.warn({ strategy: strategy.name, label, err: safeErrorMessage(err) }, "yt-dlp fallback");
+    }
+  }
+
+  const blocked = /confirm you.?re not a bot|cookies|sign in/i.test(safeErrorMessage(lastErr));
+  const hint = blocked
+    ? "YouTube bloqueou o IP do servidor. O worker já tentou Android/iOS/MWeb/Embedded; para esse vídeo/IP precisa de cookie/proxy server-side no EasyPanel, não do cliente final."
+    : "Falha ao extrair mídia do YouTube depois de múltiplas estratégias.";
+  throw new Error(`${hint} Último erro: ${safeErrorMessage(lastErr)}`);
 }
 
 async function download(url, dest) {
   // YouTube → yt-dlp; resto → curl
   if (/youtube\.com|youtu\.be/.test(url)) {
-    await sh("yt-dlp", [
-      ...ytdlpCommonArgs(),
+    await ytdlpWithFallback([
       "-f", "bv*[height<=1080]+ba/b[height<=1080]",
       "--merge-output-format", "mp4",
-      "-o", dest,
-      url,
-    ]);
+    ], dest, url, "download-video");
   } else {
     await sh("curl", ["-L", "--fail", "-o", dest, url]);
   }
@@ -372,7 +454,7 @@ async function processTranscribeJob(job) {
 
     if (isYT) {
       // Baixa só o áudio pra reduzir tempo/banda
-      await sh("yt-dlp", [...ytdlpCommonArgs(), "-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
+      await ytdlpWithFallback(["-f", "bestaudio[ext=m4a]/bestaudio"], mediaFile, source_url, "transcribe-audio");
     } else {
       await sh("curl", ["-L", "--fail", "-o", mediaFile, source_url]);
     }

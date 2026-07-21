@@ -47,10 +47,14 @@ RUN npm install --omit=dev
 
 COPY index.js ./
 COPY face_track.py ./
+COPY diarize.py ./
 
 ENV NODE_ENV=production \
     PORT=8080 \
-    WORK_DIR=/tmp/clipfy
+    WORK_DIR=/tmp/clipfy \
+    HF_HOME=/opt/hf-cache \
+    TRANSFORMERS_CACHE=/opt/hf-cache \
+    PYANNOTE_CACHE=/opt/hf-cache
 
 EXPOSE 8080
 

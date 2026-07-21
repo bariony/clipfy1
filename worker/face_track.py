@@ -101,6 +101,37 @@ def haar_detect(cascade, frame_bgr):
     return [[int(x), int(y), int(w), int(h), 0.5] for (x, y, w, h) in boxes]
 
 
+def detect_native_split(gray):
+    """
+    Detecta 'split-screen nativo' no frame original: uma linha divisória
+    vertical forte perto do centro (moldura preta, borda dura, gradient).
+    Retorna True quando a coluna central concentra muito mais energia de
+    borda vertical que o restante do frame.
+    """
+    h, w = gray.shape[:2]
+    if w < 200 or h < 200:
+        return False
+    sob = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    col_energy = np.mean(np.abs(sob), axis=0)  # média por coluna
+    mean_all = float(np.mean(col_energy)) + 1e-6
+    # janela central de 8% da largura
+    c0 = int(w * 0.46)
+    c1 = int(w * 0.54)
+    center_max = float(np.max(col_energy[c0:c1]))
+    # também exigir uniformidade vertical (divisor real é reto de cima a baixo)
+    center_col = int(w * 0.5)
+    line = gray[:, max(0, center_col - 1):center_col + 2].astype(np.float32).mean(axis=1)
+    line_std = float(np.std(line))
+    return center_max > mean_all * 6.0 and line_std < 40.0
+
+
+def hist_hsv(bgr):
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    h = cv2.calcHist([hsv], [0, 1], None, [30, 32], [0, 180, 0, 256])
+    cv2.normalize(h, h, 0, 1, cv2.NORM_MINMAX)
+    return h
+
+
 def main():
     if len(sys.argv) < 2:
         _emit({"error": "missing video arg", "w": 0, "h": 0, "frames": [], "detector": "none"})
@@ -136,12 +167,14 @@ def main():
             return
 
     frames = []
+    prev_hist = None
     idx = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         if idx % step == 0:
+            t_sec = round(idx / vfps, 3)
             try:
                 if yolo:
                     sess, inp_name, isize = yolo
@@ -151,11 +184,30 @@ def main():
             except Exception as e:
                 sys.stderr.write(f"[face_track] frame {idx} falhou: {e}\n")
                 faces = []
-            frames.append({"t": round(idx / vfps, 3), "faces": faces})
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            try:
+                split = bool(detect_native_split(gray))
+            except Exception:
+                split = False
+
+            shot = False
+            try:
+                hist = hist_hsv(frame)
+                if prev_hist is not None:
+                    corr = float(cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL))
+                    if corr < 0.55:
+                        shot = True
+                prev_hist = hist
+            except Exception:
+                pass
+
+            frames.append({"t": t_sec, "faces": faces, "split": split, "shot": shot})
         idx += 1
 
     cap.release()
     _emit({"w": w, "h": h, "detector": detector_name, "frames": frames})
+
 
 
 if __name__ == "__main__":

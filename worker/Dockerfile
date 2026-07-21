@@ -46,6 +46,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY index.js ./
+COPY reframe.js ./
 COPY face_track.py ./
 COPY diarize.py ./
 

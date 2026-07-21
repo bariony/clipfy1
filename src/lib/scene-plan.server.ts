@@ -101,6 +101,32 @@ function coerceScenePlan(
     .sort((a, b) => a.t - b.t);
   if (scenes.length === 0) return null;
 
+  // Pós-processamento conservador: a IA pode exagerar em split/stack/quad.
+  // Divisão é exceção; nunca em sequência; máximo ~25% das cenas.
+  const multiLayouts = new Set<SceneStep["layout"]>(["split", "stack", "pip", "quad"]);
+  const maxMulti = Math.max(1, Math.floor(scenes.length * 0.25));
+  let multiCount = 0;
+  let previousWasMulti = false;
+  for (const sc of scenes) {
+    const isMulti = multiLayouts.has(sc.layout);
+    if (!isMulti) {
+      previousWasMulti = false;
+      continue;
+    }
+    const hasSecond = Boolean(sc.right || sc.bottom || sc.inset || (Array.isArray(sc.grid) && sc.grid.length > 1));
+    if (previousWasMulti || multiCount >= maxMulti || !hasSecond) {
+      sc.layout = "full";
+      sc.right = undefined;
+      sc.bottom = undefined;
+      sc.inset = undefined;
+      sc.grid = undefined;
+      previousWasMulti = false;
+      continue;
+    }
+    multiCount++;
+    previousWasMulti = true;
+  }
+
   const speakers: Speaker[] = (obj.speakers ?? [])
     .filter((s) => s && s.id)
     .slice(0, 6)

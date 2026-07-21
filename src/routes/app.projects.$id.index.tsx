@@ -49,10 +49,11 @@ export const Route = createFileRoute("/app/projects/$id/")({
   loader: async ({ params, context }) => {
     const project = await context.queryClient.ensureQueryData(projectQueryOptions(params.id));
     if (!project) throw notFound();
-    context.queryClient.ensureQueryData(projectClipsQueryOptions(params.id));
-    context.queryClient.ensureQueryData(transcriptQueryOptions(params.id));
+    context.queryClient.ensureQueryData(projectClipsQueryOptions(project.id));
+    context.queryClient.ensureQueryData(transcriptQueryOptions(project.id));
     return { title: project.title };
   },
+
   component: ProjectWorkspace,
   errorComponent: ({ error }) => (
     <div className="p-8 text-sm text-destructive">Falhou ao carregar: {error.message}</div>

@@ -44,63 +44,104 @@ function Projects() {
       {projects.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((p) => {
-            const hasSource = Boolean(p.storage_path || p.source_url);
-            const nextStep = !hasSource
-              ? "Adicionar vídeo ou YouTube"
-              : p.storage_path && ["draft", "failed"].includes(p.status)
-                ? "Transcrever vídeo"
-                : p.source_url && !p.storage_path
-                  ? "Link salvo"
-                  : "Continuar";
-
-            return (
-              <Link
-                key={p.id}
-                to="/app/projects/$id"
-                params={{ id: p.id }}
-                className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40"
-              >
-                <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-secondary via-background to-secondary">
-                  <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                    <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                      {p.source === "youtube" ? "YouTube" : hasSource ? "Video" : "Empty project"}
-                    </div>
-                  </div>
-                  <div className="absolute right-3 top-3">
-                    {p.storage_path && p.status === "draft" ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
-                        <span className="size-1.5 rounded-full bg-current" />
-                        ready
-                      </span>
-                    ) : (
-                      <StatusPill status={p.status as ProjectStatus} />
-                    )}
-                  </div>
-                  <div className="absolute bottom-3 right-3 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-foreground backdrop-blur">
-                    {formatDuration(p.duration_seconds)}
-                  </div>
-                </div>
-                <div className="flex flex-1 flex-col p-4">
-                  <h3 className="mb-2 truncate text-sm font-bold">{p.title}</h3>
-                  <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
-                    {hasSource ? <CheckCircle2 className="size-4 text-primary" /> : <Upload className="size-4 text-primary" />}
-                    <span>{nextStep}</span>
-                  </div>
-                  <div className="mt-auto flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    <span>{timeAgo(p.created_at)}</span>
-                    <span className="inline-flex items-center gap-1 text-primary">
-                      Abrir <ArrowRight className="size-3" />
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+        <div className="space-y-8">
+          {hasDrafts && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="inline-flex size-2 rounded-full bg-yellow-400" />
+                <h2 className="text-sm font-bold uppercase tracking-widest text-yellow-300">
+                  Continuar rascunhos
+                </h2>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  {drafts.length}
+                </span>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {drafts.map((p) => (
+                  <ProjectCard key={p.id} project={p} highlight />
+                ))}
+              </div>
+            </section>
+          )}
+          {others.length > 0 && (
+            <section>
+              {hasDrafts && (
+                <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+                  Todos os projetos
+                </h2>
+              )}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {others.map((p) => (
+                  <ProjectCard key={p.id} project={p} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function ProjectCard({
+  project: p,
+  highlight,
+}: {
+  project: ReturnType<typeof useSuspenseQuery<ReturnType<typeof projectsQueryOptions>>>["data"][number];
+  highlight?: boolean;
+}) {
+  const hasSource = Boolean(p.storage_path || p.source_url);
+  const nextStep = !hasSource
+    ? "Adicionar vídeo ou YouTube"
+    : ["draft", "failed"].includes(p.status)
+      ? "Gerar cortes"
+      : p.status === "ready"
+        ? "Ver cortes"
+        : "Continuar";
+
+  return (
+    <Link
+      to="/app/projects/$id"
+      params={{ id: p.id }}
+      className={cn(
+        "group flex flex-col overflow-hidden rounded-2xl border bg-card transition-colors",
+        highlight ? "border-yellow-400/40 hover:border-yellow-400" : "border-border hover:border-primary/40",
+      )}
+    >
+      <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-secondary via-background to-secondary">
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/60">
+            {p.source === "youtube" ? "YouTube" : hasSource ? "Video" : "Sem fonte"}
+          </div>
+        </div>
+        <div className="absolute right-3 top-3">
+          {highlight ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-400/50 bg-yellow-400/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-yellow-300">
+              <span className="size-1.5 rounded-full bg-current" />
+              continuar
+            </span>
+          ) : (
+            <StatusPill status={p.status as ProjectStatus} />
+          )}
+        </div>
+        <div className="absolute bottom-3 right-3 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-foreground backdrop-blur">
+          {formatDuration(p.duration_seconds)}
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="mb-2 truncate text-sm font-bold">{p.title}</h3>
+        <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+          {hasSource ? <CheckCircle2 className="size-4 text-primary" /> : <Upload className="size-4 text-primary" />}
+          <span>{nextStep}</span>
+        </div>
+        <div className="mt-auto flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <span>{timeAgo(p.created_at)}</span>
+          <span className="inline-flex items-center gap-1 text-primary">
+            Abrir <ArrowRight className="size-3" />
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
 

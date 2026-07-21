@@ -72,7 +72,7 @@ export function StylePanel({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects", projectId] });
       qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
-      toast.success("Estilo aplicado a todos os cortes");
+      void 0;
     },
     onError: (err: unknown) =>
       toast.error("Não consegui salvar", { description: err instanceof Error ? err.message : "" }),

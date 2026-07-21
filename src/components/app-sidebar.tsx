@@ -53,7 +53,7 @@ export function AppSidebar() {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
-    toast.success("Signed out");
+    void 0;
     navigate({ to: "/auth", search: { mode: "login" }, replace: true });
   }
 

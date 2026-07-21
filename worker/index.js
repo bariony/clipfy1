@@ -698,20 +698,100 @@ function pickFocusCx(track, t0, t1, prevCx) {
 
 // Foco secundário: melhor grupo cuja distância do foco principal seja >= 20% da largura.
 function pickSecondaryCx(track, t0, t1, excludeCx) {
-  if (!track || !track.frames || !track.w) return null;
-  const minGap = track.w * 0.20;
-  let sum = 0, wsum = 0;
-  for (const f of track.frames) {
-    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
-    for (const [x, y, w, h, s] of f.faces || []) {
-      const cx = x + w / 2;
-      if (Math.abs(cx - excludeCx) < minGap) continue;
-      const weight = (w * h) * (s ?? 0.5);
-      sum += cx * weight; wsum += weight;
-    }
+  const groups = faceGroupsInWindow(track, t0, t1, null);
+  const primary = groups?.find((g) => Math.abs(g.cx - excludeCx) < track.w * 0.12) ?? groups?.[0];
+  const secondary = distinctFaceGroups(groups, primary, track?.w, 0.26)[0];
+  return secondary ? { cx: secondary.cx, cy: secondary.cy, score: secondary.score } : null;
+}
+
+function distinctFaceGroups(groups, primary, trackW, minGapRatio = 0.26) {
+  if (!Array.isArray(groups) || !primary || !trackW) return [];
+  const minGap = trackW * minGapRatio;
+  const minScore = primary.score * 0.28;
+  return groups.filter(
+    (g) =>
+      Math.abs(g.cx - primary.cx) >= minGap &&
+      g.score >= minScore &&
+      g.coverage >= 0.25,
+  );
+}
+
+function normalizedFace(group, track) {
+  if (!group || !track?.w || !track?.h) return null;
+  return {
+    cx: Math.round((group.cx / track.w) * 1920),
+    cy: Math.round((group.cy / track.h) * 1080),
+    score: group.score,
+    coverage: group.coverage,
+  };
+}
+
+function cropX(cx, width) {
+  return Math.max(0, Math.min(1920 - width, Math.round(cx - width / 2)));
+}
+
+function cropYForFace(cy, height) {
+  return Math.max(0, Math.min(1080 - height, Math.round(cy - height * 0.34)));
+}
+
+function fullFocusFilter(norm, primary, sceneIndex) {
+  const cx = primary?.cx ?? 960;
+  const zoom = 1 + 0.045 * (sceneIndex % 3);
+  const sliceW = Math.max(360, Math.round(608 / zoom));
+  const sliceH = Math.max(720, Math.round(1080 / zoom));
+  const x = cropX(cx, sliceW);
+  const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
+  return `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`;
+}
+
+function stackFilter(norm, primary, secondary) {
+  const tileW = 760;
+  const tileH = 675;
+  const topX = cropX(primary.cx, tileW);
+  const botX = cropX(secondary.cx, tileW);
+  const topY = cropYForFace(primary.cy, tileH);
+  const botY = cropYForFace(secondary.cy, tileH);
+  return (
+    `[0:v]${norm},split=2[a][b];` +
+    `[a]crop=${tileW}:${tileH}:${topX}:${topY},scale=1080:960,setsar=1[top];` +
+    `[b]crop=${tileW}:${tileH}:${botX}:${botY},scale=1080:960,setsar=1[bot];` +
+    `[top][bot]vstack=inputs=2[v]`
+  );
+}
+
+function pipFilter(norm, primary, secondary) {
+  const mainW = 608;
+  const insetW = 760;
+  const insetH = 675;
+  const mainX = cropX(primary.cx, mainW);
+  const insX = cropX(secondary.cx, insetW);
+  const insY = cropYForFace(secondary.cy, insetH);
+  return (
+    `[0:v]${norm},split=2[m][i];` +
+    `[m]crop=${mainW}:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
+    `[i]crop=${insetW}:${insetH}:${insX}:${insY},scale=420:374,setsar=1[inset];` +
+    `[main][inset]overlay=x=W-w-36:y=132[v]`
+  );
+}
+
+function quadFilter(norm, people) {
+  const tileW = 760;
+  const tileH = 675;
+  const filters = people.slice(0, 4).map((p, idx) => {
+    const inLabel = String.fromCharCode(97 + idx);
+    return `[${inLabel}]crop=${tileW}:${tileH}:${cropX(p.cx, tileW)}:${cropYForFace(p.cy, tileH)},scale=540:960,setsar=1[q${idx + 1}]`;
+  });
+  while (filters.length < 4) {
+    const idx = filters.length;
+    const inLabel = String.fromCharCode(97 + idx);
+    const p = people[idx % people.length];
+    filters.push(`[${inLabel}]crop=${tileW}:${tileH}:${cropX(p.cx, tileW)}:${cropYForFace(p.cy, tileH)},scale=540:960,setsar=1[q${idx + 1}]`);
   }
-  if (wsum <= 0) return null;
-  return { cx: sum / wsum };
+  return (
+    `[0:v]${norm},split=4[a][b][c][d];` +
+    `${filters.join(";")};` +
+    `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`
+  );
 }
 
 

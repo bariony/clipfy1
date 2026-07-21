@@ -3,8 +3,9 @@ import { ArrowRight, CheckCircle2, FolderKanban, Plus, Upload } from "lucide-rea
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
-import { projectsQueryOptions, formatDuration, timeAgo } from "@/lib/projects";
+import { projectsQueryOptions, formatDuration, timeAgo, type Project } from "@/lib/projects";
 import type { ProjectStatus } from "@/lib/project-status";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/projects/")({
   head: () => ({ meta: [{ title: "Projects — Clipfy" }] }),

@@ -49,6 +49,8 @@ export function ClipCard({
   const end = Number(clip.end_seconds);
   const duration = Math.max(0, end - start);
 
+  const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;
+
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/40">
       <div className="relative">

@@ -687,33 +687,44 @@ function pickSecondaryCx(track, t0, t1, excludeCx) {
 }
 
 
-// Edição dinâmica por cena com centros de face REAIS (não mais colunas fixas).
+// Edição dinâmica por cena com centros de face REAIS.
+// Estratégia: ignoramos os rótulos A/B do GPT (que erram na pessoa em cena)
+// e escolhemos o foco pela MASSA VISUAL da janela (área × score × contagem).
+// Suavizado com o foco da cena anterior pra não pipocar entre pessoas.
 function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const layout = String(scene?.layout || "full");
   const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
+  const t0 = scene.t;
+  const t1 = scene.t + scene.dur;
 
-  // Resolve centro X em pixels da NORMALIZAÇÃO (1920x1080) para um speaker id.
-  // Prioridade: face tracker → mapa de colunas → default.
-  const cxOf = (id, tWin) => {
-    if (ctx?.track && ctx?.cluster) {
-      const [t0, t1] = tWin || [scene.t, scene.t + scene.dur];
-      const raw = focusCxInWindow(ctx.track, ctx.cluster, id, t0, t1);
-      if (raw != null && ctx.track.w > 0) {
-        // reescala pra 1920 (largura normalizada)
-        return Math.round((raw / ctx.track.w) * 1920);
-      }
+  // 1) Face-driven focus (pixels normalizados 1920x1080)
+  let primaryCx = null, secondaryCx = null;
+  if (ctx?.track && ctx.track.w > 0) {
+    const p = pickFocusCx(ctx.track, t0, t1, ctx.prevCxRaw);
+    if (p) {
+      primaryCx = Math.round((p.cx / ctx.track.w) * 1920);
+      ctx.prevCxRaw = p.cx;
+      const s = pickSecondaryCx(ctx.track, t0, t1, p.cx);
+      if (s) secondaryCx = Math.round((s.cx / ctx.track.w) * 1920);
     }
-    const col = speakerMap[id] || speakerMap.A || "left";
+  }
+
+  // 2) Fallback pra mapa de colunas (quando o tracker não achou rostos)
+  const fallbackCx = (id) => {
+    const col = speakerMap?.[id] || speakerMap?.A || "left";
     return col === "left" ? 480 : col === "right" ? 1440 : 960;
   };
+  const primary = primaryCx ?? fallbackCx(scene.focus || "A");
+  const secondaryFallbackId =
+    scene.inset || scene.bottom || scene.right || ((scene.focus || "A") === "A" ? "B" : "A");
+  const secondary = secondaryCx ?? fallbackCx(secondaryFallbackId);
+
   const isVert = aw === 1080 && ah === 1920;
 
   if (isVert) {
     if (layout === "stack" || layout === "split") {
-      const topId = scene.top || scene.left || scene.focus || "A";
-      const botId = scene.bottom || scene.right || (topId === "A" ? "B" : "A");
-      const topX = Math.max(0, Math.min(840, cxOf(topId) - 540));
-      const botX = Math.max(0, Math.min(840, cxOf(botId) - 540));
+      const topX = Math.max(0, Math.min(840, primary - 540));
+      const botX = Math.max(0, Math.min(840, secondary - 540));
       return {
         complex: true,
         filter:
@@ -724,10 +735,8 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
       };
     }
     if (layout === "pip") {
-      const mainId = scene.focus || "A";
-      const insetId = scene.inset || (mainId === "A" ? "B" : "A");
-      const mainX = Math.max(0, Math.min(1312, cxOf(mainId) - 304));
-      const insX = Math.max(0, Math.min(1312, cxOf(insetId) - 304));
+      const mainX = Math.max(0, Math.min(1312, primary - 304));
+      const insX = Math.max(0, Math.min(1312, secondary - 304));
       return {
         complex: true,
         filter:
@@ -756,19 +765,18 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
         filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
       };
     }
-    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto REAL do falante
+    // full: zoom leve alternado sobre o rosto REAL do falante dominante
     const zoom = 1 + 0.06 * (i % 3);
     const sliceW = Math.max(320, Math.round(608 / zoom));
     const sliceH = Math.max(540, Math.round(1080 / zoom));
-    const focusId = scene.focus || "A";
-    const cxPx = cxOf(focusId);
-    const x = Math.max(0, Math.min(1920 - sliceW, cxPx - Math.round(sliceW / 2)));
+    const x = Math.max(0, Math.min(1920 - sliceW, primary - Math.round(sliceW / 2)));
     const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
       complex: false,
       filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
     };
   }
+
 
   return {
     complex: false,

@@ -238,6 +238,7 @@ export type Database = {
       }
       projects: {
         Row: {
+          active_transcribe_job_id: string | null
           created_at: string
           description: string | null
           duration_seconds: number | null
@@ -255,11 +256,13 @@ export type Database = {
           target_clip_count: number | null
           thumbnail_url: string | null
           title: string
+          transcribe_progress: number
           updated_at: string
           user_id: string
           virality_bias: number | null
         }
         Insert: {
+          active_transcribe_job_id?: string | null
           created_at?: string
           description?: string | null
           duration_seconds?: number | null
@@ -277,11 +280,13 @@ export type Database = {
           target_clip_count?: number | null
           thumbnail_url?: string | null
           title: string
+          transcribe_progress?: number
           updated_at?: string
           user_id: string
           virality_bias?: number | null
         }
         Update: {
+          active_transcribe_job_id?: string | null
           created_at?: string
           description?: string | null
           duration_seconds?: number | null
@@ -299,6 +304,7 @@ export type Database = {
           target_clip_count?: number | null
           thumbnail_url?: string | null
           title?: string
+          transcribe_progress?: number
           updated_at?: string
           user_id?: string
           virality_bias?: number | null
@@ -461,6 +467,7 @@ export type Database = {
           _title: string
         }
         Returns: {
+          active_transcribe_job_id: string | null
           created_at: string
           description: string | null
           duration_seconds: number | null
@@ -478,6 +485,7 @@ export type Database = {
           target_clip_count: number | null
           thumbnail_url: string | null
           title: string
+          transcribe_progress: number
           updated_at: string
           user_id: string
           virality_bias: number | null

@@ -48,6 +48,9 @@ const ACCEPTED = "video/mp4,video/quicktime,video/webm,video/x-matroska";
 export const Route = createFileRoute("/app/projects/$id/")({
   head: () => ({ meta: [{ title: "Projeto — Clipfy" }] }),
   loader: async ({ params, context }) => {
+    // Skip on SSR — /app is client-auth gated; supabase has no session on the server
+    // so RLS returns null and the loader would throw notFound() on every hard refresh.
+    if (typeof window === "undefined") return { title: "Projeto" };
     const project = await context.queryClient.ensureQueryData(projectQueryOptions(params.id));
     if (!project) throw notFound();
     context.queryClient.ensureQueryData(projectClipsQueryOptions(project.id));

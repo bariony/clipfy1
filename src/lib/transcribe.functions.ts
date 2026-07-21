@@ -5,15 +5,12 @@ import { sanitizeStoredProcessingError } from "./processing-errors";
 
 const Input = z.object({ projectId: z.string().uuid() });
 
-const MAX_TRANSCRIBE_BYTES = 200 * 1024 * 1024; // 200MB safety cap
-
 export const transcribeProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => Input.parse(data))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("Missing LOVABLE_API_KEY");
+
 
     // Carrega o projeto (RLS aplica)
     const { data: project, error: loadErr } = await supabase

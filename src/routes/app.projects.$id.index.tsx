@@ -250,7 +250,7 @@ function ProjectWorkspace() {
   const hasSource = hasUpload || hasYoutube;
   const isUploading = uploadVideo.isPending || project.status === "uploading";
   const isProcessing =
-    processSource.isPending || project.status === "transcribing" || project.status === "analyzing";
+    processSource.isPending || project.status === "transcribing" || (project.status === "analyzing" && clips.length === 0);
   const hasClips = clips.length > 0;
 
   const preferences = (project.preferences ?? {}) as ProjectPreferences;
@@ -258,9 +258,25 @@ function ProjectWorkspace() {
   const visibleError = formatProcessingError(project.error_message);
   const canRetryFromError = hasSource && project.status === "failed";
   const processingProgress =
-    project.status === "analyzing"
+    project.status === "analyzing" && hasClips
+      ? 100
+      : project.status === "analyzing"
       ? Math.max(85, project.transcribe_progress ?? 85)
       : Math.max(1, Math.min(100, project.transcribe_progress ?? 1));
+
+  useEffect(() => {
+    if (!project || project.status !== "analyzing" || clips.length === 0) return;
+    supabase
+      .from("projects")
+      .update({
+        status: "ready",
+        error_message: null,
+        transcribe_progress: 100,
+        active_transcribe_job_id: null,
+      })
+      .eq("id", project.id)
+      .then(() => invalidate());
+  }, [project?.id, project?.status, clips.length]);
 
   const source: "upload" | "youtube" = hasYoutube ? "youtube" : "upload";
   const sampleClip = clips[0];

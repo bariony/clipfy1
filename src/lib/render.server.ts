@@ -51,8 +51,11 @@ export async function enqueueRenderForClip({
     sourceUrl = project.source_url;
   }
 
+  const projectPreferences = (project.preferences as { aspect_ratio?: string; caption_template?: string; caption_position?: string; layout_mode?: string } | null) ?? {};
   const templateSlug =
-    (clip.metadata as { template_slug?: string } | null)?.template_slug ?? "hormozi-slam";
+    (clip.metadata as { template_slug?: string } | null)?.template_slug ??
+    projectPreferences.caption_template ??
+    "hormozi-slam";
 
   const { createHmac, randomUUID } = await import("crypto");
 
@@ -78,8 +81,7 @@ export async function enqueueRenderForClip({
       bucket: "renders",
       path: outputPath,
       upload_url: uploadUrl.toString(),
-      aspect_ratio:
-        (project.preferences as { aspect_ratio?: string } | null)?.aspect_ratio ?? "9:16",
+      aspect_ratio: projectPreferences.aspect_ratio ?? "9:16",
     },
     clip: {
       id: clip.id,
@@ -93,9 +95,8 @@ export async function enqueueRenderForClip({
       segments: transcript?.segments ?? [],
     },
     scene_plan: clip.scene_plan ?? null,
-    layout: (project.preferences as { layout_mode?: string } | null)?.layout_mode ?? "auto",
-    caption_position:
-      (project.preferences as { caption_position?: string } | null)?.caption_position ?? "bottom",
+    layout: projectPreferences.layout_mode ?? "auto",
+    caption_position: projectPreferences.caption_position ?? "bottom",
     callback_url: callbackUrl.toString(),
   };
 

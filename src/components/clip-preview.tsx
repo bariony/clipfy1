@@ -19,14 +19,13 @@ type Props = {
   controlledPlaying?: boolean; // for editor mode
   onTimeUpdate?: (t: number) => void;
   className?: string;
+  /**
+   * Quando presente, o preview reproduz o MP4 final renderizado
+   * (com legenda/cortes já embutidos) — sem overlay de captions.
+   */
+  renderedUrl?: string | null;
 };
 
-/**
- * Unified 9:16 (or configurable) preview with karaoke caption overlay.
- * - Upload: <video> with signed URL. Autoplay muted on hover for cards.
- * - YouTube: embed with start/end. Autoplay muted on hover.
- * - Captions: rendered from transcript segments and the chosen template.
- */
 export function ClipPreview({
   source,
   videoUrl,

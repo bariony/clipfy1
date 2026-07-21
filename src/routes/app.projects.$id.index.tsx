@@ -400,9 +400,6 @@ function ProjectWorkspace() {
                   segments={segments}
                   templateSlug={templateSlug}
                   onEdit={() => setEditingClip(clip)}
-                  onExport={() => exportClip.mutate(clip.id)}
-                  exporting={exportClip.isPending && exportClip.variables === clip.id}
-                />
               ))}
             </div>
           </div>

@@ -552,33 +552,99 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   return header + events;
 }
 
-function scenePlanWantsMultiCam(edl, aspect) {
-  const layout = edl.layout;
-  const scenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
-  const hasMultiScene = scenes.some((s) => ["split", "stack", "pip", "quad"].includes(String(s.layout)));
-  return aspect === "9:16" && (layout === "split-v" || layout === "split-h" || (layout === "auto" && hasMultiScene));
+function speakerColumnMap(edl) {
+  const speakers = Array.isArray(edl.scene_plan?.speakers) ? edl.scene_plan.speakers : [];
+  const cols = ["left", "right", "center"];
+  const map = {};
+  speakers.forEach((s, i) => {
+    if (s?.id && i < 3) map[String(s.id)] = cols[i];
+  });
+  if (!map.A) map.A = "left";
+  if (!map.B) map.B = "right";
+  if (!map.C) map.C = "center";
+  return map;
 }
 
-function buildReframeFilter(edl, aw, ah) {
-  const aspect = edl.output?.aspect_ratio ?? "9:16";
-  if (scenePlanWantsMultiCam(edl, aspect)) {
-    const topH = Math.floor(ah / 2);
-    const bottomH = ah - topH;
+// Edição dinâmica por cena: recorta enquadramento de acordo com o layout
+// planejado (full/stack/pip/quad/broll) e o falante em foco. Como a fonte é
+// horizontal (podcast/YouTube), mapeamos cada falante para uma metade da tela
+// (A=esquerda, B=direita, C=centro) e cortamos em torno do rosto dele.
+function buildSceneFilter(scene, i, aw, ah, speakerMap) {
+  const layout = String(scene?.layout || "full");
+  const norm = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1";
+  const cxOf = (id) => {
+    const col = speakerMap[id] || speakerMap.A || "left";
+    return col === "left" ? 480 : col === "right" ? 1440 : 960;
+  };
+  const isVert = aw === 1080 && ah === 1920;
+
+  if (isVert) {
+    if (layout === "stack" || layout === "split") {
+      const topId = scene.top || scene.left || scene.focus || "A";
+      const botId = scene.bottom || scene.right || (topId === "A" ? "B" : "A");
+      const topX = Math.max(0, Math.min(840, cxOf(topId) - 540));
+      const botX = Math.max(0, Math.min(840, cxOf(botId) - 540));
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=2[a][b];` +
+          `[a]crop=1080:960:${topX}:60,setsar=1[top];` +
+          `[b]crop=1080:960:${botX}:60,setsar=1[bot];` +
+          `[top][bot]vstack=inputs=2[v]`,
+      };
+    }
+    if (layout === "pip") {
+      const mainId = scene.focus || "A";
+      const insetId = scene.inset || (mainId === "A" ? "B" : "A");
+      const mainX = Math.max(0, Math.min(1312, cxOf(mainId) - 304));
+      const insX = Math.max(0, Math.min(1312, cxOf(insetId) - 304));
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=2[m][i];` +
+          `[m]crop=608:1080:${mainX}:0,scale=1080:1920,setsar=1[main];` +
+          `[i]crop=608:1080:${insX}:0,scale=360:640,setsar=1[inset];` +
+          `[main][inset]overlay=x=W-w-40:y=120[v]`,
+      };
+    }
+    if (layout === "quad") {
+      return {
+        complex: true,
+        filter:
+          `[0:v]${norm},split=4[a][b][c][d];` +
+          `[a]crop=960:540:0:0,scale=540:960,setsar=1[q1];` +
+          `[b]crop=960:540:960:0,scale=540:960,setsar=1[q2];` +
+          `[c]crop=960:540:0:540,scale=540:960,setsar=1[q3];` +
+          `[d]crop=960:540:960:540,scale=540:960,setsar=1[q4];` +
+          `[q1][q2]hstack=inputs=2[t];[q3][q4]hstack=inputs=2[bt];[t][bt]vstack=inputs=2[v]`,
+      };
+    }
+    if (layout === "broll") {
+      const frames = Math.max(30, Math.round((scene.dur || 3) * 30));
+      return {
+        complex: false,
+        filter: `${norm},zoompan=z='min(zoom+0.0015,1.20)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30`,
+      };
+    }
+    // full: zoom leve variável (1.0, 1.06, 1.12) sobre o rosto do falante
+    const zoom = 1 + 0.06 * (i % 3);
+    const sliceW = Math.max(320, Math.round(608 / zoom));
+    const sliceH = Math.max(540, Math.round(1080 / zoom));
+    const focusId = scene.focus || "A";
+    const x = Math.max(0, Math.min(1920 - sliceW, cxOf(focusId) - Math.round(sliceW / 2)));
+    const y = Math.max(0, Math.min(1080 - sliceH, Math.round((1080 - sliceH) / 2)));
     return {
-      complex: true,
-      filter:
-        `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,split=2[leftSrc][rightSrc];` +
-        `[leftSrc]crop=iw*0.54:ih:0:0,scale=${aw}:${topH}:force_original_aspect_ratio=increase,crop=${aw}:${topH}[top];` +
-        `[rightSrc]crop=iw*0.54:ih:iw*0.46:0,scale=${aw}:${bottomH}:force_original_aspect_ratio=increase,crop=${aw}:${bottomH}[bottom];` +
-        `[top][bottom]vstack=inputs=2[v]`,
+      complex: false,
+      filter: `${norm},crop=${sliceW}:${sliceH}:${x}:${y},scale=1080:1920,setsar=1`,
     };
   }
 
   return {
     complex: false,
-    filter: `scale=iw*max(${aw}/iw\,${ah}/ih):ih*max(${aw}/iw\,${ah}/ih),crop=${aw}:${ah}`,
+    filter: `scale=iw*max(${aw}/iw\\,${ah}/ih):ih*max(${aw}/iw\\,${ah}/ih),crop=${aw}:${ah},setsar=1`,
   };
 }
+
 
 async function transcribeIfNeeded(sourceFile, existingSegments, language) {
   const hasWords = Array.isArray(existingSegments) && existingSegments.some((s) => Array.isArray(s.words) && s.words.length > 0);

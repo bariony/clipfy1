@@ -133,18 +133,43 @@ function ytdlpRuntimeArgs() {
 }
 
 const YTDLP_CLIENT_STRATEGIES = [
-  { name: "android", extractor: "youtube:player_client=android" },
-  { name: "ios", extractor: "youtube:player_client=ios" },
   { name: "mweb", extractor: "youtube:player_client=mweb" },
+  { name: "web_creator", extractor: "youtube:player_client=web_creator" },
+  { name: "android", extractor: "youtube:player_client=android" },
+  { name: "android_vr", extractor: "youtube:player_client=android_vr" },
+  { name: "ios", extractor: "youtube:player_client=ios" },
   { name: "web_safari", extractor: "youtube:player_client=web_safari" },
   { name: "tv_embedded", extractor: "youtube:player_client=tv_embedded" },
   { name: "web_embedded", extractor: "youtube:player_client=web_embedded" },
   { name: "default", extractor: "youtube:player_client=default" },
 ];
 
+function ytdlpProxyPool() {
+  const pool = [
+    ...(process.env.YTDLP_PROXIES ?? "")
+      .split(/[\n,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    ...(process.env.YTDLP_PROXY ? [process.env.YTDLP_PROXY.trim()] : []),
+  ];
+  return [...new Set(pool)];
+}
+
+function maskProxy(proxy) {
+  if (!proxy) return "direct";
+  try {
+    const url = new URL(proxy);
+    if (url.username) url.username = "***";
+    if (url.password) url.password = "***";
+    return url.toString();
+  } catch {
+    return "configured";
+  }
+}
+
 // Args comuns pro yt-dlp: runtime JS explícito, cookies server-side opcionais,
 // headers/retries e variações de player-client para aguentar bloqueios do YouTube.
-function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
+function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0], proxy = null) {
   const extractorArgs = [strategy.extractor];
   if (process.env.DISABLE_BGUTIL_POT !== "1") {
     extractorArgs.push(`youtubepot-bgutilhttp:base_url=http://127.0.0.1:${BGUTIL_PROVIDER_PORT}`);
@@ -155,6 +180,7 @@ function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
     "--retries", "3",
     "--extractor-retries", "3",
     "--fragment-retries", "3",
+    "--socket-timeout", "20",
     "--force-ipv4",
     "--geo-bypass",
     "--no-check-certificates",
@@ -168,8 +194,8 @@ function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
     ...ytdlpCookieArgs(),
   ];
 
-  if (process.env.YTDLP_PROXY) {
-    args.push("--proxy", process.env.YTDLP_PROXY);
+  if (proxy) {
+    args.push("--proxy", proxy);
   }
 
   return args;
@@ -177,25 +203,33 @@ function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
 
 async function ytdlpWithFallback(formatArgs, outputPath, url, label) {
   let lastErr;
-  for (const strategy of YTDLP_CLIENT_STRATEGIES) {
-    try {
-      await sh("yt-dlp", [
-        ...ytdlpCommonArgs(strategy),
-        ...formatArgs,
-        "-o", outputPath,
-        url,
-      ]);
-      app.log.info({ strategy: strategy.name, label }, "yt-dlp ok");
-      return;
-    } catch (err) {
-      lastErr = err;
-      app.log.warn({ strategy: strategy.name, label, err: safeErrorMessage(err) }, "yt-dlp fallback");
+  const proxies = ytdlpProxyPool();
+  const proxyAttempts = proxies.length > 0 ? proxies : [null];
+
+  for (const proxy of proxyAttempts) {
+    for (const strategy of YTDLP_CLIENT_STRATEGIES) {
+      try {
+        await sh("yt-dlp", [
+          ...ytdlpCommonArgs(strategy, proxy),
+          ...formatArgs,
+          "-o", outputPath,
+          url,
+        ]);
+        app.log.info({ strategy: strategy.name, proxy: maskProxy(proxy), label }, "yt-dlp ok");
+        return;
+      } catch (err) {
+        lastErr = err;
+        app.log.warn(
+          { strategy: strategy.name, proxy: maskProxy(proxy), label, err: safeErrorMessage(err) },
+          "yt-dlp fallback",
+        );
+      }
     }
   }
 
   const blocked = /confirm you.?re not a bot|cookies|sign in/i.test(safeErrorMessage(lastErr));
   const hint = blocked
-    ? "YouTube bloqueou o IP do servidor mesmo com múltiplos clients e PO Token. Para esse vídeo/IP, a solução real é proxy residencial/datacenter limpo ou cookies server-side do dono da plataforma no EasyPanel; cliente final não instala nada."
+    ? "YouTube bloqueou o IP do servidor. Configure YTDLP_PROXY/YTDLP_PROXIES com proxy residencial ou ISP limpo, ou YTDLP_COOKIES_B64 com cookies server-side da conta operacional do Clipfy. Cliente final não instala extensão nem envia cookie."
     : "Falha ao extrair mídia do YouTube depois de múltiplas estratégias.";
   throw new Error(`${hint} Último erro: ${safeErrorMessage(lastErr)}`);
 }
@@ -454,14 +488,16 @@ async function tick() {
 app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-pot-v2" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-pot-v2",
+  version: "youtube-rescue-v3",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,
   youtube: {
     bgutil_pot: bgutilStarted,
     cookies: ytdlpCookieArgs().length > 0,
-    proxy: Boolean(process.env.YTDLP_PROXY),
+    proxy: ytdlpProxyPool().length > 0,
+    proxy_count: ytdlpProxyPool().length,
+    proxy_mode: ytdlpProxyPool().length > 1 ? "pool" : ytdlpProxyPool().length === 1 ? "single" : "off",
   },
 }));
 

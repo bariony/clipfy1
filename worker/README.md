@@ -40,8 +40,10 @@ APP_URL=https://clipfy1.lovable.app
 WORKER_ID=vps-hostinger-01
 CONCURRENCY=1
 PORT=3000
-# Opcional, só se o IP da VPS for bloqueado pelo YouTube mesmo com PO Token:
+# Necessário se o IP da VPS for bloqueado pelo YouTube:
 # YTDLP_PROXY=http://usuario:senha@host:porta
+# ou vários, um por linha ou separados por vírgula:
+# YTDLP_PROXIES=http://user:pass@proxy1:porta,http://user:pass@proxy2:porta
 # YTDLP_COOKIES_B64=<cookies.txt em base64 da conta operacional do Clipfy>
 ```
 
@@ -63,16 +65,21 @@ para o app saber onde enfileirar jobs.
 ### 6. Testar
 ```bash
 curl http://179.197.231.80:3000/health
-# → {"ok":true,"version":"youtube-pot-v2","youtube":{"bgutil_pot":true,...}}
+# → {"ok":true,"version":"youtube-rescue-v3","youtube":{"bgutil_pot":true,"proxy":true,...}}
 ```
 
-Se `/health` não mostrar `version: "youtube-pot-v2"`, o EasyPanel ainda está
+Se `/health` não mostrar `version: "youtube-rescue-v3"`, o EasyPanel ainda está
 rodando a imagem antiga. Faça rebuild/deploy sem cache.
 
-O worker já vem com PO Token provider e múltiplos clients do YouTube. Se um IP
-de VPS estiver marcado pelo YouTube, o fallback profissional é configurar
-`YTDLP_PROXY` ou cookies server-side de uma conta operacional sua; cliente final
-não baixa extensão nem fornece cookie.
+O worker já vem com PO Token provider, runtime JS e múltiplos clients do
+YouTube. Isso resolve parte dos bloqueios, mas **não limpa IP de VPS marcado**.
+Quando aparecer `Sign in to confirm you’re not a bot`, a correção de produção é:
+
+1. configurar `YTDLP_PROXY`/`YTDLP_PROXIES` com proxy residencial ou ISP limpo;
+2. opcionalmente configurar `YTDLP_COOKIES_B64` com cookies server-side de uma
+   conta operacional do Clipfy.
+
+O cliente final não instala extensão, não fornece cookie e não vê isso.
 
 ## Endpoints
 

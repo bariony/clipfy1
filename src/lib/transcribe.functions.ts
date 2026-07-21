@@ -55,7 +55,12 @@ export const transcribeProject = createServerFn({ method: "POST" })
       if (!workerUrl || !workerSecret) {
         await supabase
           .from("projects")
-          .update({ status: "failed", error_message: "Worker de transcrição não configurado." })
+          .update({
+            status: "failed",
+            error_message: "Worker de transcrição não configurado.",
+            transcribe_progress: 0,
+            active_transcribe_job_id: null,
+          })
           .eq("id", project.id);
         throw new Error("Worker de transcrição não configurado (RENDER_WORKER_URL/SECRET).");
       }

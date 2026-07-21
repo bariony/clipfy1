@@ -59,13 +59,17 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
         // Confirma que o projeto existe (job_id = project_id)
         const { data: project, error: projErr } = await supabaseAdmin
           .from("projects")
-          .select("id, user_id, description, target_clip_count, language, active_transcribe_job_id")
+          .select("id, user_id, description, target_clip_count, language, status, active_transcribe_job_id")
           .eq("id", parsed.job_id)
           .maybeSingle();
         if (projErr) return new Response(projErr.message, { status: 500 });
         if (!project) return new Response("Project not found", { status: 404 });
 
         if (project.active_transcribe_job_id && attemptId !== project.active_transcribe_job_id) {
+          return Response.json({ ok: true, stale: true });
+        }
+
+        if (!project.active_transcribe_job_id && project.status !== "transcribing") {
           return Response.json({ ok: true, stale: true });
         }
 

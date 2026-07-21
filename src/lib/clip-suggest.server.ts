@@ -35,8 +35,8 @@ function normalizeClipBounds(params: {
   minClipSeconds?: number | null;
   maxClipSeconds?: number | null;
 }) {
-  const floor = Math.max(12, Math.min(45, Number(params.minClipSeconds ?? 18)));
-  const ceiling = Math.max(floor + 8, Math.min(90, Number(params.maxClipSeconds ?? 60)));
+  const floor = Math.max(35, Math.min(65, Number(params.minClipSeconds ?? 45)));
+  const ceiling = Math.max(floor + 15, Math.min(95, Number(params.maxClipSeconds ?? 75)));
   const start = Math.max(0, Math.floor(params.start));
   const naturalEnd = Math.max(start + floor, Math.ceil(params.end));
   return {

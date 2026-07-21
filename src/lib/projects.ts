@@ -98,6 +98,13 @@ export const projectQueryOptions = (id: string) =>
       if (error) throw error;
       return data;
     },
+    refetchInterval: (query) => {
+      const p = query.state.data;
+      if (!p) return false;
+      return p.status === "transcribing" || p.status === "analyzing" || p.status === "uploading"
+        ? 3000
+        : false;
+    },
   });
 
 export const projectClipsQueryOptions = (id: string) =>

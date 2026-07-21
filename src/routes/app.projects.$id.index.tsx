@@ -192,9 +192,15 @@ function ProjectWorkspace() {
     mutationFn: () => processFn({ data: { projectId: id } }),
     onSuccess: (res) => {
       invalidate();
-      toast.success("Cortes gerados", {
-        description: `${res.clips} sugestões a partir de ${res.characters.toLocaleString()} caracteres.`,
-      });
+      if (res.dispatched) {
+        toast.success("Baixando e transcrevendo no servidor…", {
+          description: "Isso leva de 30s a alguns minutos dependendo do tamanho do vídeo.",
+        });
+      } else {
+        toast.success("Cortes gerados", {
+          description: `${res.clips} sugestões a partir de ${res.characters.toLocaleString()} caracteres.`,
+        });
+      }
     },
     onError: (err: unknown) => {
       invalidate();

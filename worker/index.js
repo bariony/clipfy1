@@ -329,9 +329,84 @@ app.post("/jobs", async (req, reply) => {
   }
   const { job_id, edl } = req.body ?? {};
   if (!job_id || !edl) return reply.code(400).send({ error: "job_id e edl obrigatórios" });
-  queue.push({ job_id, edl });
+  queue.push({ kind: "render", job_id, edl });
   tick();
   return { queued: true, position: queue.length };
+});
+
+// -------- Transcrição YouTube (yt-dlp + Groq) --------
+async function processTranscribeJob(job) {
+  const { job_id, source_url, language, callback_url } = job;
+  const jobDir = path.join(WORK_DIR, `t-${job_id}`);
+  await mkdir(jobDir, { recursive: true });
+  const cb = (payload) => callback({ job_id, worker_id: WORKER_ID, ...payload }, callback_url);
+
+  await cb({ status: "processing", progress: 10 });
+
+  try {
+    if (!groq) throw new Error("Worker sem GROQ_API_KEY");
+    const isYT = /youtube\.com|youtu\.be/.test(source_url);
+    const mediaFile = path.join(jobDir, isYT ? "src.m4a" : "src.mp4");
+
+    if (isYT) {
+      // Baixa só o áudio pra reduzir tempo/banda
+      await sh("yt-dlp", ["-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
+    } else {
+      await sh("curl", ["-L", "--fail", "-o", mediaFile, source_url]);
+    }
+    await cb({ status: "processing", progress: 40 });
+
+    const wav = path.join(jobDir, "audio.wav");
+    await sh("ffmpeg", ["-y", "-i", mediaFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]);
+    await cb({ status: "processing", progress: 60 });
+
+    const duration = await ffprobeDuration(wav).catch(() => null);
+
+    const tr = await groq.audio.transcriptions.create({
+      file: createReadStream(wav),
+      model: "whisper-large-v3-turbo",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment", "word"],
+      language: language && language !== "auto" ? language : undefined,
+    });
+
+    // Constrói segmentos com palavras para karaokê
+    const words = (tr.words ?? []).map((w) => ({ word: w.word, start: w.start, end: w.end }));
+    const segments = (tr.segments ?? []).map((s) => ({
+      text: String(s.text ?? "").trim(),
+      start: Number(s.start ?? 0),
+      end: Number(s.end ?? 0),
+      words: words.filter((w) => w.start >= s.start && w.end <= s.end + 0.05),
+    }));
+
+    await cb({
+      status: "completed",
+      progress: 100,
+      language: tr.language ?? language ?? null,
+      duration,
+      full_text: String(tr.text ?? "").trim(),
+      segments,
+    });
+  } catch (err) {
+    app.log.error({ err, job_id }, "transcribe falhou");
+    await cb({ status: "failed", error_message: String(err.message ?? err) });
+  } finally {
+    await rm(jobDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+app.post("/transcribe", async (req, reply) => {
+  const auth = req.headers["authorization"] ?? "";
+  if (auth !== `Bearer ${RENDER_WORKER_SECRET}`) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+  const { job_id, source_url, language, callback_url } = req.body ?? {};
+  if (!job_id || !source_url) return reply.code(400).send({ error: "job_id e source_url obrigatórios" });
+  // Executa em background — callback assíncrono via HMAC
+  processTranscribeJob({ job_id, source_url, language, callback_url }).catch((err) =>
+    app.log.error({ err, job_id }, "transcribe crash"),
+  );
+  return { accepted: true };
 });
 
 // Bootstrap

@@ -1183,7 +1183,12 @@ async function processJob(job) {
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
-    const sceneCtx = { track, cluster, diar, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+    const splitWindows = nativeSplitWindows(track);
+    if (splitWindows.length) {
+      app.log.info({ windows: splitWindows.map((w) => ({ t0: +w.t0.toFixed(2), t1: +w.t1.toFixed(2) })) }, "split-screen nativo detectado no material original");
+    }
+    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false };
+
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes

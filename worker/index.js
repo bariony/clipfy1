@@ -974,6 +974,22 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const t0 = scene.t;
   const t1 = scene.t + scene.dur;
 
+  // 0) Composição do vídeo ORIGINAL: se a cena cai numa janela onde o
+  // material já é split-screen nativo (moldura vertical no centro), NÃO
+  // tenta focar em ninguém — preserva a composição original em stack.
+  if (aw === 1080 && ah === 1920 && sceneIsNativeSplit(ctx?.splitWindows, t0, t1)) {
+    if (ctx) { ctx.multiCount = (ctx.multiCount ?? 0) + 1; ctx.lastWasMulti = true; ctx.prevCxRaw = null; }
+    return {
+      complex: true,
+      layout: "stack",
+      requestedLayout,
+      filter: nativeSplitFilter(norm),
+      nativeSplit: true,
+    };
+  }
+
+
+
   // 1) Face-driven focus (pixels normalizados 1920x1080)
   let primaryFace = null;
   let secondaryFace = null;

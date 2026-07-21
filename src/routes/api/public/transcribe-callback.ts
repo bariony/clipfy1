@@ -128,6 +128,7 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
 
         const { generateAndSaveClipSuggestions } = await import("@/lib/clip-suggest.server");
         const flatSegs = segments.map((s) => ({ text: s.text, start: s.start, end: s.end }));
+        const callbackOrigin = new URL(request.url).origin;
         try {
           await generateAndSaveClipSuggestions({
             supabase: supabaseAdmin,
@@ -138,6 +139,7 @@ export const Route = createFileRoute("/api/public/transcribe-callback")({
             brief: project.description,
             targetCount: project.target_clip_count,
             apiKey: key,
+            origin: callbackOrigin,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Falha ao gerar cortes";

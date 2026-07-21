@@ -16,6 +16,9 @@ export type CaptionStyle = {
     | "cap-anim-flip"
     | "cap-anim-jitter";
   chip?: boolean;
+  badge?: "Novo" | "Popular";
+  /** Sample phrase used in the gallery preview card. */
+  sample?: string;
 };
 
 const STROKE_BLACK = "[-webkit-text-stroke:3px_#000] [paint-order:stroke_fill]";
@@ -31,17 +34,118 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
     base: `text-white ${STROKE_BLACK}`,
     highlight: `text-yellow-300 ${STROKE_BLACK} drop-shadow-[0_6px_0_rgba(0,0,0,.9)]`,
     animation: "cap-anim-slam",
+    badge: "Popular",
+    sample: "VAI VIRALIZAR AGORA",
   },
   {
-    slug: "neon-pulse",
-    name: "Neon Pulse",
-    description: "Ciano em glow, ativa pulsando em lima.",
-    container: "bottom-[14%]",
-    wrap: "text-xl sm:text-2xl md:text-[32px] font-extrabold uppercase tracking-wide",
-    base: "text-cyan-200/85 [text-shadow:0_0_10px_rgba(103,232,249,.5),0_0_2px_#000]",
+    slug: "beasty",
+    name: "Beasty",
+    description: "MrBeast: amarelo neon com traço preto grosso.",
+    container: "bottom-[16%]",
+    wrap: "text-2xl sm:text-3xl md:text-[40px] font-black uppercase tracking-tight leading-[1.05]",
+    base: `text-white ${STROKE_BLACK}`,
+    highlight: `text-[#facc15] ${STROKE_BLACK} drop-shadow-[0_4px_0_#000]`,
+    animation: "cap-anim-pop",
+    badge: "Popular",
+    sample: "OLHA ISSO AQUI",
+  },
+  {
+    slug: "youshaei",
+    name: "Youshaei",
+    description: "Minimal, branco fino, ativa em azul elétrico.",
+    container: "bottom-[16%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-bold tracking-tight",
+    base: "text-white/85 [text-shadow:0_2px_8px_rgba(0,0,0,.7)]",
+    highlight: "text-[#3b82f6] [text-shadow:0_2px_10px_rgba(59,130,246,.55)]",
+    animation: "cap-anim-pop",
+    sample: "A ideia é simples",
+  },
+  {
+    slug: "mozi",
+    name: "Mozi",
+    description: "Verde vibrante estilo TikTok Mozi.",
+    container: "bottom-[16%]",
+    wrap: "text-2xl sm:text-3xl md:text-[36px] font-black uppercase tracking-tight",
+    base: `text-white ${STROKE_BLACK}`,
+    highlight: `text-[#22c55e] ${STROKE_BLACK} drop-shadow-[0_5px_0_#000]`,
+    animation: "cap-anim-slam",
+    sample: "COMEÇOU A GUERRA",
+  },
+  {
+    slug: "glitch-infinite",
+    name: "Glitch Infinite",
+    description: "Ativa treme e brilha, vibe cyberpunk.",
+    container: "bottom-[15%]",
+    wrap: "text-xl sm:text-2xl md:text-[32px] font-extrabold uppercase tracking-widest",
+    base: "text-white/80 [text-shadow:0_0_8px_rgba(255,255,255,.3)]",
     highlight:
-      "text-[hsl(var(--primary))] [text-shadow:0_0_18px_hsl(var(--primary)/.9),0_0_2px_#000]",
-    animation: "cap-anim-glow",
+      "text-[#f97316] [text-shadow:1px_0_0_#ef4444,-1px_0_0_#3b82f6,0_0_18px_rgba(249,115,22,.7)]",
+    animation: "cap-anim-jitter",
+    badge: "Novo",
+    sample: "SEM VOLTA AGORA",
+  },
+  {
+    slug: "karaoke-lime",
+    name: "Karaokê",
+    description: "Karaokê clássico em lima, palavra por palavra.",
+    container: "bottom-[18%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-extrabold tracking-tight",
+    base: "text-white/70 [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
+    highlight:
+      "text-[hsl(var(--primary))] [text-shadow:0_0_16px_hsl(var(--primary)/.75),0_2px_0_#000]",
+    animation: "cap-anim-pop",
+    sample: "Canta comigo agora",
+  },
+  {
+    slug: "deep-diver",
+    name: "Deep Diver",
+    description: "Cinzento sóbrio, ativa em preto sobre lima.",
+    container: "bottom-[16%]",
+    wrap: "text-lg sm:text-xl md:text-[26px] font-bold tracking-tight",
+    base: "text-white/70 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]",
+    highlight:
+      "text-black bg-[hsl(var(--primary))] rounded-sm px-2 py-0.5",
+    animation: "cap-anim-bounce",
+    chip: true,
+    sample: "Entrando fundo agora",
+  },
+  {
+    slug: "pod-p",
+    name: "Pod P",
+    description: "Estilo podcast: magenta com sombra.",
+    container: "bottom-[16%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-extrabold uppercase tracking-tight",
+    base: `text-white ${STROKE_THIN}`,
+    highlight: `text-[#ec4899] ${STROKE_THIN} drop-shadow-[0_4px_0_#000]`,
+    animation: "cap-anim-pop",
+    sample: "PAPO REAL AGORA",
+  },
+  {
+    slug: "popline",
+    name: "Popline",
+    description: "Sublinhado colorido, texto limpo.",
+    container: "bottom-[16%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-bold tracking-tight",
+    base: "text-white [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
+    highlight:
+      "text-white [box-shadow:inset_0_-8px_0_hsl(var(--primary))] px-1",
+    animation: "cap-anim-pop",
+    badge: "Novo",
+    sample: "Presta atenção nisso",
+  },
+  {
+    slug: "seamless-bounce",
+    name: "Seamless Bounce",
+    description: "Ativa quica com verde suave.",
+    container: "bottom-[16%]",
+    wrap: "text-xl sm:text-2xl md:text-[30px] font-extrabold tracking-tight",
+    base: "text-white/85 [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
+    highlight:
+      "text-white bg-[hsl(var(--primary))]/85 rounded-full px-3 py-0.5",
+    animation: "cap-anim-bounce",
+    chip: true,
+    badge: "Novo",
+    sample: "Vamos com tudo",
   },
   {
     slug: "tiktok-chip",
@@ -54,6 +158,19 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
       "text-black bg-[hsl(var(--primary))] rounded-md px-2 py-0.5 shadow-[0_6px_0_rgba(0,0,0,.9)]",
     animation: "cap-anim-bounce",
     chip: true,
+    sample: "OLHA A CENA",
+  },
+  {
+    slug: "neon-pulse",
+    name: "Neon Pulse",
+    description: "Ciano em glow, ativa pulsando em lima.",
+    container: "bottom-[14%]",
+    wrap: "text-xl sm:text-2xl md:text-[32px] font-extrabold uppercase tracking-wide",
+    base: "text-cyan-200/85 [text-shadow:0_0_10px_rgba(103,232,249,.5),0_0_2px_#000]",
+    highlight:
+      "text-[hsl(var(--primary))] [text-shadow:0_0_18px_hsl(var(--primary)/.9),0_0_2px_#000]",
+    animation: "cap-anim-glow",
+    sample: "NEON NA CARA",
   },
   {
     slug: "gradient-rush",
@@ -65,17 +182,7 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
     highlight:
       "bg-gradient-to-br from-[hsl(var(--primary))] via-yellow-300 to-orange-400 bg-clip-text text-transparent drop-shadow-[0_4px_10px_rgba(0,0,0,.6)]",
     animation: "cap-anim-jitter",
-  },
-  {
-    slug: "karaoke-lime",
-    name: "Karaoke Lime",
-    description: "Karaokê clássico em lima.",
-    container: "bottom-[18%]",
-    wrap: "text-xl sm:text-2xl md:text-[30px] font-extrabold tracking-tight",
-    base: "text-white/70 [text-shadow:0_2px_6px_rgba(0,0,0,.7)]",
-    highlight:
-      "text-[hsl(var(--primary))] [text-shadow:0_0_16px_hsl(var(--primary)/.75),0_2px_0_#000]",
-    animation: "cap-anim-pop",
+    sample: "SOBE O GRÁFICO",
   },
   {
     slug: "flip-cinema",
@@ -87,6 +194,7 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
     highlight:
       "text-white [text-shadow:0_0_14px_rgba(255,255,255,.5),0_2px_10px_rgba(0,0,0,.9)]",
     animation: "cap-anim-flip",
+    sample: "Cena por cena",
   },
   {
     slug: "big-impact",
@@ -97,6 +205,7 @@ export const CAPTION_TEMPLATES: CaptionStyle[] = [
     base: `text-white ${STROKE_BLACK} drop-shadow-[0_6px_0_#000]`,
     highlight: `text-[hsl(var(--primary))] ${STROKE_BLACK} drop-shadow-[0_8px_0_#000]`,
     animation: "cap-anim-slam",
+    sample: "IMPACTO TOTAL",
   },
 ];
 

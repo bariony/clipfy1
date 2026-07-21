@@ -793,7 +793,18 @@ async function processJob(job) {
       "-movflags", "+faststart",
       cutFile,
     ]);
-    await sendCallback({ job_id, status: "processing", progress: 45, worker_id: WORKER_ID });
+    await sendCallback({ job_id, status: "processing", progress: 40, worker_id: WORKER_ID });
+
+    // 2.5. Face tracking do clipe cortado — descobre posições REAIS dos rostos
+    // pra alimentar o crop por cena (substitui as colunas 480/1440 fixas).
+    const track = await runFaceTracker(cutFile, 2);
+    const cluster = clusterFaces(track);
+    if (cluster) {
+      app.log.info({ cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w } }, "face tracker: clusters detectados");
+    } else {
+      app.log.info("face tracker: sem clusters (fallback colunas)");
+    }
+    await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
@@ -801,6 +812,7 @@ async function processJob(job) {
     const aspect = edl.output.aspect_ratio ?? "9:16";
     const [aw, ah] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
     const speakerMap = speakerColumnMap(edl);
+    const sceneCtx = { track, cluster };
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
     plannedScenes = plannedScenes

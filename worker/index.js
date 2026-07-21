@@ -876,9 +876,15 @@ async function processJob(job) {
         sceneFiles.push(sceneFile);
       } catch (err) {
         app.log.warn({ err: err?.message, scene: i, layout: sc.layout }, "cena falhou, caindo pra full");
-        // fallback simples: full no falante A com zoom padrão
-        const fCol = speakerMap[sc.focus] || "left";
-        const fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;
+        // fallback: full centrado no rosto real (se tracker rodou) ou coluna
+        let fCx = 480;
+        if (cluster) {
+          const raw = focusCxInWindow(track, cluster, sc.focus || "A", sc.t, sc.t + sc.dur);
+          if (raw != null && track.w > 0) fCx = Math.round((raw / track.w) * 1920);
+        } else {
+          const fCol = speakerMap[sc.focus] || "left";
+          fCx = fCol === "left" ? 480 : fCol === "right" ? 1440 : 960;
+        }
         const fallback = `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,crop=608:1080:${Math.max(0, Math.min(1312, fCx - 304))}:0,scale=1080:1920,setsar=1`;
         await sh("ffmpeg", [...baseArgs, "-vf", fallback, ...encArgs]);
         sceneFiles.push(sceneFile);

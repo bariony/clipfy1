@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Save } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { Loader2, Save, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +16,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ClipPreview } from "@/components/clip-preview";
+import { SceneTimeline } from "@/components/scene-timeline";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { CAPTION_TEMPLATES } from "@/lib/caption-templates";
 import { formatDuration, type Clip, type TranscriptSegment } from "@/lib/projects";
+import { isScenePlan, LAYOUT_LABEL } from "@/lib/scene-plan";
+import { regenerateScenePlan } from "@/lib/scene-plan.functions";
 
 type Props = {
   open: boolean;

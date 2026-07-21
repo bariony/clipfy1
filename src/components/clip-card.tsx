@@ -35,11 +35,11 @@ export function ClipCard({
 }: Props) {
   const qc = useQueryClient();
   const { data: renderJob } = useQuery(latestRenderJobQueryOptions(clip.id));
-  const stuck = renderJob ? isRenderJobStuck(renderJob) : false;
-  const rendering = !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
-  const ready = renderJob?.status === "completed" && (clip.render_url || renderJob.output_url);
-  const failed = renderJob?.status === "failed" || stuck;
   const downloadUrl = clip.render_url ?? renderJob?.output_url ?? null;
+  const ready = Boolean(downloadUrl) && (clip.status === "ready" || renderJob?.status === "completed");
+  const stuck = !ready && renderJob ? isRenderJobStuck(renderJob) : false;
+  const rendering = !stuck && (renderJob?.status === "queued" || renderJob?.status === "processing");
+  const failed = !ready && (renderJob?.status === "failed" || stuck);
   const score = clip.virality_score;
 
   const perClipTemplate = (clip.metadata as { template_slug?: string } | null)?.template_slug;
@@ -61,12 +61,13 @@ export function ClipCard({
   const kickedRef = useRef(false);
   useEffect(() => {
     if (kickedRef.current) return;
+    if (ready) return;
     if (renderJob === undefined) return; // ainda carregando
     if (renderJob === null || stuck) {
       kickedRef.current = true;
       autoRender.mutate();
     }
-  }, [renderJob, stuck, autoRender]);
+  }, [renderJob, stuck, ready, autoRender]);
 
   const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
   const errorMsg = renderJob?.error_message ?? null;

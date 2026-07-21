@@ -604,13 +604,11 @@ function clusterFaces(track) {
   }
   if (xs.length < 4) return null;
   xs.sort((a, b) => a - b);
-  // Se todos os rostos estão numa faixa estreita (<20% da largura), 1 cluster
   const span = xs[xs.length - 1] - xs[0];
   if (span < track.w * 0.18) {
     const mean = xs.reduce((s, v) => s + v, 0) / xs.length;
     return { single: mean, w: track.w, h: track.h };
   }
-  // Encontrar maior gap
   let gapIdx = 0, gapVal = 0;
   for (let i = 1; i < xs.length; i++) {
     const g = xs[i] - xs[i - 1];
@@ -622,30 +620,72 @@ function clusterFaces(track) {
   return { A: mean(left), B: mean(right), w: track.w, h: track.h };
 }
 
-// Para uma janela [t0, t1] (relativa ao cutFile), calcula o centro X da
-// face de foco dentro dessa janela — se não houver detecção suficiente,
-// cai pro cluster global.
-function focusCxInWindow(track, cluster, focusId, t0, t1) {
-  if (!track || !cluster) return null;
-  if (cluster.single !== undefined) return cluster.single;
-  const targetSide = focusId === "B" ? "B" : focusId === "C" ? "center" : "A";
-  const midX = (cluster.A + cluster.B) / 2;
-  const xs = [];
+// Foco data-driven: agrupa detecções da janela em bins de ~8% da largura,
+// pesa por área × score × contagem (rostos maiores e mais estáveis = foco),
+// e aplica suavização temporal com o cx da cena anterior pra não pipocar.
+// Retorna { cx } em pixels do vídeo ORIGINAL, ou null se sem detecções.
+function pickFocusCx(track, t0, t1, prevCx) {
+  if (!track || !track.frames || !track.w) return null;
+  const binSize = Math.max(1, track.w * 0.08);
+  const buckets = new Map();
   for (const f of track.frames) {
-    if (f.t < t0 || f.t > t1) continue;
-    for (const [x, , w] of f.faces || []) {
+    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    for (const [x, y, w, h, s] of f.faces || []) {
       const cx = x + w / 2;
-      if (targetSide === "A" && cx < midX) xs.push(cx);
-      else if (targetSide === "B" && cx >= midX) xs.push(cx);
-      else if (targetSide === "center") xs.push(cx);
+      const weight = (w * h) * (s ?? 0.5);
+      const key = Math.round(cx / binSize);
+      const b = buckets.get(key) || { sum: 0, wsum: 0, count: 0 };
+      b.sum += cx * weight; b.wsum += weight; b.count += 1;
+      buckets.set(key, b);
     }
   }
-  if (xs.length === 0) {
-    return targetSide === "B" ? cluster.B : targetSide === "center" ? midX : cluster.A;
+  if (buckets.size === 0) return null;
+  // Merge adjacent bins into groups
+  const keys = [...buckets.keys()].sort((a, b) => a - b);
+  const groups = [];
+  for (const k of keys) {
+    const b = buckets.get(k);
+    const last = groups[groups.length - 1];
+    if (last && k - last.lastK <= 1) {
+      last.sum += b.sum; last.wsum += b.wsum; last.count += b.count; last.lastK = k;
+    } else {
+      groups.push({ sum: b.sum, wsum: b.wsum, count: b.count, lastK: k });
+    }
   }
-  xs.sort((a, b) => a - b);
-  return xs[Math.floor(xs.length / 2)]; // mediana pra evitar outliers
+  let best = null;
+  for (const g of groups) {
+    const cx = g.sum / g.wsum;
+    // Score: massa visual × persistência temporal (log(count))
+    let score = g.wsum * Math.log(1 + g.count);
+    // Suavização: bônus leve se estiver perto do foco anterior (mesma pessoa)
+    if (prevCx != null) {
+      const dist = Math.abs(cx - prevCx) / track.w;
+      if (dist < 0.15) score *= 1.35;
+      else if (dist < 0.30) score *= 1.10;
+    }
+    if (!best || score > best.score) best = { cx, score };
+  }
+  return best ? { cx: best.cx } : null;
 }
+
+// Foco secundário: melhor grupo cuja distância do foco principal seja >= 20% da largura.
+function pickSecondaryCx(track, t0, t1, excludeCx) {
+  if (!track || !track.frames || !track.w) return null;
+  const minGap = track.w * 0.20;
+  let sum = 0, wsum = 0;
+  for (const f of track.frames) {
+    if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    for (const [x, y, w, h, s] of f.faces || []) {
+      const cx = x + w / 2;
+      if (Math.abs(cx - excludeCx) < minGap) continue;
+      const weight = (w * h) * (s ?? 0.5);
+      sum += cx * weight; wsum += weight;
+    }
+  }
+  if (wsum <= 0) return null;
+  return { cx: sum / wsum };
+}
+
 
 // Edição dinâmica por cena com centros de face REAIS (não mais colunas fixas).
 function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {

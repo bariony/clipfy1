@@ -624,18 +624,29 @@ function clusterFaces(track) {
 // pesa por área × score × contagem (rostos maiores e mais estáveis = foco),
 // e aplica suavização temporal com o cx da cena anterior pra não pipocar.
 // Retorna { cx } em pixels do vídeo ORIGINAL, ou null se sem detecções.
-function pickFocusCx(track, t0, t1, prevCx) {
+function faceGroupsInWindow(track, t0, t1, prevCx) {
   if (!track || !track.frames || !track.w) return null;
-  const binSize = Math.max(1, track.w * 0.08);
+  const binSize = Math.max(1, track.w * 0.075);
   const buckets = new Map();
+  let sampledFrames = 0;
   for (const f of track.frames) {
     if (f.t < t0 - 0.25 || f.t > t1 + 0.25) continue;
+    sampledFrames++;
+    const frameKey = Math.round(f.t * 10);
     for (const [x, y, w, h, s] of f.faces || []) {
+      if (w <= 0 || h <= 0) continue;
       const cx = x + w / 2;
-      const weight = (w * h) * (s ?? 0.5);
+      const cy = y + h / 2;
+      const weight = (w * h) * Math.max(0.1, s ?? 0.5);
       const key = Math.round(cx / binSize);
-      const b = buckets.get(key) || { sum: 0, wsum: 0, count: 0 };
-      b.sum += cx * weight; b.wsum += weight; b.count += 1;
+      const b = buckets.get(key) || { sumX: 0, sumY: 0, sumW: 0, sumH: 0, wsum: 0, count: 0, frames: new Set() };
+      b.sumX += cx * weight;
+      b.sumY += cy * weight;
+      b.sumW += w * weight;
+      b.sumH += h * weight;
+      b.wsum += weight;
+      b.count += 1;
+      b.frames.add(frameKey);
       buckets.set(key, b);
     }
   }
@@ -647,24 +658,41 @@ function pickFocusCx(track, t0, t1, prevCx) {
     const b = buckets.get(k);
     const last = groups[groups.length - 1];
     if (last && k - last.lastK <= 1) {
-      last.sum += b.sum; last.wsum += b.wsum; last.count += b.count; last.lastK = k;
+      last.sumX += b.sumX;
+      last.sumY += b.sumY;
+      last.sumW += b.sumW;
+      last.sumH += b.sumH;
+      last.wsum += b.wsum;
+      last.count += b.count;
+      for (const frame of b.frames) last.frames.add(frame);
+      last.lastK = k;
     } else {
-      groups.push({ sum: b.sum, wsum: b.wsum, count: b.count, lastK: k });
+      groups.push({ ...b, lastK: k });
     }
   }
-  let best = null;
-  for (const g of groups) {
-    const cx = g.sum / g.wsum;
+  const result = groups
+    .filter((g) => g.wsum > 0)
+    .map((g) => {
+      const cx = g.sumX / g.wsum;
+      const cy = g.sumY / g.wsum;
+      const coverage = sampledFrames > 0 ? g.frames.size / sampledFrames : 0;
     // Score: massa visual × persistência temporal (log(count))
-    let score = g.wsum * Math.log(1 + g.count);
+      let score = g.wsum * Math.log(1 + g.count) * (0.6 + Math.min(1, coverage));
     // Suavização: bônus leve se estiver perto do foco anterior (mesma pessoa)
-    if (prevCx != null) {
-      const dist = Math.abs(cx - prevCx) / track.w;
-      if (dist < 0.15) score *= 1.35;
-      else if (dist < 0.30) score *= 1.10;
-    }
-    if (!best || score > best.score) best = { cx, score };
-  }
+      if (prevCx != null) {
+        const dist = Math.abs(cx - prevCx) / track.w;
+        if (dist < 0.15) score *= 1.35;
+        else if (dist < 0.30) score *= 1.10;
+      }
+      return { cx, cy, score, coverage, w: g.sumW / g.wsum, h: g.sumH / g.wsum };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  return result.length ? result : null;
+}
+
+function pickFocusCx(track, t0, t1, prevCx) {
+  const best = faceGroupsInWindow(track, t0, t1, prevCx)?.[0];
   return best ? { cx: best.cx } : null;
 }
 

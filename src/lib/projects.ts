@@ -86,14 +86,17 @@ export const projectsQueryOptions = () =>
     },
   });
 
-export const projectQueryOptions = (id: string) =>
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const projectQueryOptions = (idOrSlug: string) =>
   queryOptions({
-    queryKey: ["projects", id],
+    queryKey: ["projects", idOrSlug],
     queryFn: async (): Promise<Project | null> => {
+      const column = UUID_RE.test(idOrSlug) ? "id" : "slug";
       const { data, error } = await supabase
         .from("projects")
         .select("*")
-        .eq("id", id)
+        .eq(column, idOrSlug)
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -106,6 +109,7 @@ export const projectQueryOptions = (id: string) =>
         : false;
     },
   });
+
 
 export const projectClipsQueryOptions = (id: string) =>
   queryOptions({

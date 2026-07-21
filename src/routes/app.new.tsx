@@ -36,16 +36,17 @@ function NewProject() {
         _estimated_cost: 0,
       });
       if (error) throw error;
-      const project = data as { id?: string } | null;
+      const project = data as { id?: string; slug?: string } | null;
       if (!project?.id) throw new Error("Projeto criado sem ID. Tente novamente.");
-      return project.id;
+      return project.slug ?? project.id;
     },
-    onSuccess: (id) => {
+    onSuccess: (slug) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       void 0;
-      navigate({ to: "/app/projects/$id", params: { id } });
+      navigate({ to: "/app/projects/$id", params: { id: slug } });
     },
+
     onError: (err: unknown) => {
       toast.error("Não consegui criar o projeto", {
         description: err instanceof Error ? err.message : "Tente novamente.",

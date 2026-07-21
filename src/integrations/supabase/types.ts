@@ -247,6 +247,7 @@ export type Database = {
           max_clip_seconds: number | null
           min_clip_seconds: number | null
           preferences: Json
+          slug: string
           source: Database["public"]["Enums"]["project_source"]
           source_url: string | null
           status: Database["public"]["Enums"]["project_status"]
@@ -268,6 +269,7 @@ export type Database = {
           max_clip_seconds?: number | null
           min_clip_seconds?: number | null
           preferences?: Json
+          slug: string
           source?: Database["public"]["Enums"]["project_source"]
           source_url?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -289,6 +291,7 @@ export type Database = {
           max_clip_seconds?: number | null
           min_clip_seconds?: number | null
           preferences?: Json
+          slug?: string
           source?: Database["public"]["Enums"]["project_source"]
           source_url?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -467,6 +470,7 @@ export type Database = {
           max_clip_seconds: number | null
           min_clip_seconds: number | null
           preferences: Json
+          slug: string
           source: Database["public"]["Enums"]["project_source"]
           source_url: string | null
           status: Database["public"]["Enums"]["project_status"]
@@ -485,6 +489,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      generate_project_slug: { Args: { _title: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

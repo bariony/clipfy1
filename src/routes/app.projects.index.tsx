@@ -103,7 +103,8 @@ function ProjectCard({
   return (
     <Link
       to="/app/projects/$id"
-      params={{ id: p.id }}
+      params={{ id: p.slug ?? p.id }}
+
       className={cn(
         "group flex flex-col overflow-hidden rounded-2xl border bg-card transition-colors",
         highlight ? "border-yellow-400/40 hover:border-yellow-400" : "border-border hover:border-primary/40",

@@ -49,10 +49,11 @@ export const Route = createFileRoute("/app/projects/$id/")({
   loader: async ({ params, context }) => {
     const project = await context.queryClient.ensureQueryData(projectQueryOptions(params.id));
     if (!project) throw notFound();
-    context.queryClient.ensureQueryData(projectClipsQueryOptions(params.id));
-    context.queryClient.ensureQueryData(transcriptQueryOptions(params.id));
+    context.queryClient.ensureQueryData(projectClipsQueryOptions(project.id));
+    context.queryClient.ensureQueryData(transcriptQueryOptions(project.id));
     return { title: project.title };
   },
+
   component: ProjectWorkspace,
   errorComponent: ({ error }) => (
     <div className="p-8 text-sm text-destructive">Falhou ao carregar: {error.message}</div>
@@ -69,13 +70,15 @@ export const Route = createFileRoute("/app/projects/$id/")({
 });
 
 function ProjectWorkspace() {
-  const { id } = Route.useParams();
+  const { id: idOrSlug } = Route.useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data: project } = useSuspenseQuery(projectQueryOptions(id));
+  const { data: project } = useSuspenseQuery(projectQueryOptions(idOrSlug));
+  const id = project?.id ?? idOrSlug;
   const { data: clips } = useSuspenseQuery(projectClipsQueryOptions(id));
   const { data: transcript } = useSuspenseQuery(transcriptQueryOptions(id));
+
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);

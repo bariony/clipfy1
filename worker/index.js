@@ -602,10 +602,10 @@ async function tick() {
 }
 
 // -------------------- rotas --------------------
-app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v3" }));
+app.get("/", async () => ({ ok: true, service: "clipfy-render-worker", version: "youtube-rescue-v4-chunked-audio" }));
 app.get("/health", async () => ({
   ok: true,
-  version: "youtube-rescue-v3",
+  version: "youtube-rescue-v4-chunked-audio",
   running,
   queued: queue.length,
   worker_id: WORKER_ID,

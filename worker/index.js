@@ -372,7 +372,7 @@ async function processTranscribeJob(job) {
 
     if (isYT) {
       // Baixa só o áudio pra reduzir tempo/banda
-      await sh("yt-dlp", ["-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
+      await sh("yt-dlp", [...ytdlpCommonArgs(), "-f", "bestaudio[ext=m4a]/bestaudio", "-o", mediaFile, source_url]);
     } else {
       await sh("curl", ["-L", "--fail", "-o", mediaFile, source_url]);
     }

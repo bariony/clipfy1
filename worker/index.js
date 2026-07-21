@@ -19,6 +19,7 @@ const {
   WORK_DIR = "/tmp/clipfy",
   WORKER_ID = "vps-01",
   CONCURRENCY = "1",
+  BGUTIL_PROVIDER_PORT = "4416",
 } = process.env;
 
 if (!RENDER_WORKER_SECRET) throw new Error("RENDER_WORKER_SECRET obrigatório");
@@ -31,6 +32,7 @@ const app = Fastify({ logger: true });
 const queue = [];
 let running = 0;
 const MAX = Math.max(1, parseInt(CONCURRENCY, 10));
+let bgutilStarted = false;
 
 // -------------------- callback assinado --------------------
 async function callback(payload, targetUrl = `${APP_URL}/api/public/render-callback`) {
@@ -63,6 +65,26 @@ function sh(cmd, args, opts = {}) {
     p.on("close", (code) =>
       code === 0 ? resolve() : reject(new Error(`${cmd} exit ${code}: ${stderr.slice(-800)}`)),
     );
+  });
+}
+
+function startBgutilProvider() {
+  if (bgutilStarted || process.env.DISABLE_BGUTIL_POT === "1") return;
+  const serverFile = "/opt/bgutil-ytdlp-pot-provider/server/build/main.js";
+  if (!fs.existsSync(serverFile)) {
+    app.log.warn("bgutil PO Token provider não encontrado; yt-dlp segue sem PO Token");
+    return;
+  }
+
+  const p = spawn("node", [serverFile, "--port", BGUTIL_PROVIDER_PORT], {
+    stdio: ["ignore", "ignore", "pipe"],
+    env: process.env,
+  });
+  bgutilStarted = true;
+  p.stderr.on("data", (d) => app.log.warn({ msg: d.toString().slice(-500) }, "bgutil stderr"));
+  p.on("exit", (code) => {
+    bgutilStarted = false;
+    app.log.warn({ code }, "bgutil PO Token provider parou");
   });
 }
 
@@ -122,6 +144,11 @@ const YTDLP_CLIENT_STRATEGIES = [
 // Args comuns pro yt-dlp: runtime JS explícito, cookies server-side opcionais,
 // headers/retries e variações de player-client para aguentar bloqueios do YouTube.
 function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
+  const extractorArgs = [strategy.extractor];
+  if (process.env.DISABLE_BGUTIL_POT !== "1") {
+    extractorArgs.push(`youtubepot-bgutilhttp:base_url=http://127.0.0.1:${BGUTIL_PROVIDER_PORT}`);
+  }
+
   const args = [
     ...ytdlpRuntimeArgs(),
     "--retries", "3",
@@ -136,7 +163,7 @@ function ytdlpCommonArgs(strategy = YTDLP_CLIENT_STRATEGIES[0]) {
     "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     "--add-header", "Accept-Language:pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     "--add-header", "Referer:https://www.youtube.com/",
-    "--extractor-args", strategy.extractor,
+    "--extractor-args", extractorArgs.join(";"),
     ...ytdlpCookieArgs(),
   ];
 

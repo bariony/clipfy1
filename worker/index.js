@@ -289,6 +289,26 @@ async function ffprobeDuration(file) {
   });
 }
 
+async function ffprobeDims(file) {
+  return new Promise((resolve) => {
+    const p = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x",
+      file,
+    ]);
+    let out = "";
+    p.stdout.on("data", (d) => (out += d.toString()));
+    p.on("close", () => {
+      const [w, h] = out.trim().split("x").map((n) => parseInt(n, 10));
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) resolve({ w, h });
+      else resolve(null);
+    });
+  });
+}
+
+
 function normalizeWords(words, offset = 0) {
   return (words ?? [])
     .map((w) => ({

@@ -23,6 +23,7 @@ import { CAPTION_TEMPLATES } from "@/lib/caption-templates";
 import { formatDuration, type Clip, type TranscriptSegment } from "@/lib/projects";
 import { isScenePlan, LAYOUT_LABEL } from "@/lib/scene-plan";
 import { regenerateScenePlan } from "@/lib/scene-plan.functions";
+import { enqueueClipRender } from "@/lib/render.functions";
 
 type Props = {
   open: boolean;

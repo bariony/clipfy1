@@ -571,31 +571,85 @@ function speakerColumnMap(edl) {
 }
 
 // -------------------- FACE TRACKING --------------------
-// Roda o script Python face_track.py sobre o clipe cortado e devolve
-// { w, h, frames: [{t, faces:[[x,y,w,h]]}] }. Sem OpenCV ou vídeo inválido,
-// devolve null e o pipeline cai pro heurística de colunas fixas.
+// Roda o script Python face_track.py sobre o clipe cortado. Retorna sempre um
+// objeto estruturado com { status, data? , error?, stage? } — NÃO retorna
+// mais `null` silenciosamente. Sprint 1a: qualquer falha aqui é registrada
+// para que o diagnóstico distinga "tracker rodou e não achou rosto" de
+// "tracker não rodou".
 async function runFaceTracker(videoPath, sampleFps = 2) {
+  const started = Date.now();
+  let fileExists = false;
+  let fileSize = 0;
   try {
-    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "face_track.py");
-    const out = await new Promise((resolve, reject) => {
-      const p = spawn("python3", [script, videoPath, String(sampleFps)], { stdio: ["ignore", "pipe", "pipe"] });
-      let so = "", se = "";
-      p.stdout.on("data", (d) => (so += d.toString()));
-      p.stderr.on("data", (d) => (se += d.toString()));
-      p.on("error", reject);
-      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`face_track exit ${code}: ${se.slice(0, 200)}`))));
-    });
-    const data = JSON.parse(out);
-    if (data.error) {
-      app.log.warn({ err: data.error }, "face tracker retornou erro (usando fallback)");
-      return null;
-    }
-    if (!Array.isArray(data.frames) || data.frames.length === 0) return null;
-    return data;
-  } catch (err) {
-    app.log.warn({ err: err?.message }, "face tracker falhou (usando fallback de colunas)");
-    return null;
+    const st = await stat(videoPath);
+    fileExists = true;
+    fileSize = st.size;
+  } catch {}
+  app.log.info(
+    { event: "FACE_TRACKER_START", videoPath, fileExists, fileSize, sampleFps },
+    "face tracker: start",
+  );
+  if (!fileExists) {
+    const error = `video ausente: ${videoPath}`;
+    app.log.error({ event: "FACE_TRACKER_FAILED", stage: "video_missing", error }, "face tracker: sem arquivo");
+    return { status: "failed", stage: "video_missing", error };
   }
+
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname), "face_track.py");
+  return await new Promise((resolve) => {
+    const p = spawn("python3", [script, videoPath, String(sampleFps)], { stdio: ["ignore", "pipe", "pipe"] });
+    let so = "", se = "";
+    p.stdout.on("data", (d) => (so += d.toString()));
+    p.stderr.on("data", (d) => (se += d.toString()));
+    p.on("error", (err) => {
+      app.log.error(
+        { event: "FACE_TRACKER_FAILED", stage: "spawn", error: err.message, durationMs: Date.now() - started },
+        "face tracker: spawn falhou",
+      );
+      resolve({ status: "failed", stage: "spawn", error: err.message, stderr: se.slice(-2000) });
+    });
+    p.on("close", (code) => {
+      const durationMs = Date.now() - started;
+      if (code !== 0) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: "exit", exitCode: code, durationMs, stderr: se.slice(-2000) },
+          "face tracker: exit != 0",
+        );
+        return resolve({ status: "failed", stage: "exit", error: `exit ${code}`, exitCode: code, stderr: se.slice(-2000) });
+      }
+      let data;
+      try {
+        data = JSON.parse(so);
+      } catch (err) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: "parse", error: err.message, durationMs, stdoutHead: so.slice(0, 500), stderr: se.slice(-2000) },
+          "face tracker: JSON inválido",
+        );
+        return resolve({ status: "failed", stage: "parse", error: err.message, stderr: se.slice(-2000) });
+      }
+      if (data.status === "failed" || data.error) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: data.stage ?? "internal", error: data.error, durationMs, stderr: se.slice(-2000) },
+          "face tracker: retornou erro interno",
+        );
+        return resolve({ status: "failed", stage: data.stage ?? "internal", error: data.error, stderr: se.slice(-2000), data });
+      }
+      app.log.info(
+        {
+          event: "FACE_TRACKER_SUCCESS",
+          durationMs,
+          detector: data.detector,
+          w: data.w,
+          h: data.h,
+          frames_processed: data.frames_processed ?? data.frames?.length ?? 0,
+          detections: data.detections ?? null,
+          tracks: data.tracks?.length ?? 0,
+        },
+        "face tracker: ok",
+      );
+      resolve({ status: "success", data, stderrTail: se.slice(-500) });
+    });
+  });
 }
 
 // Clusterização 1D simples: pega todos os centros X detectados, ordena,

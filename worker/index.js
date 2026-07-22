@@ -884,12 +884,21 @@ async function runDiarizer(wavPath) {
         app.log.error({ event: "DIARIZE_FAILED", stage: "parse", error: err.message, durationMs, stderr: se.slice(-2000) }, "diarize JSON inválido");
         return resolve({ status: "failed", stage: "parse", error: err.message, stderr: se.slice(-2000) });
       }
-      if (data.error) {
-        app.log.error({ event: "DIARIZE_FAILED", stage: "internal", error: data.error, durationMs, stderr: se.slice(-2000) }, "diarize retornou erro");
-        return resolve({ status: "failed", stage: "internal", error: data.error, stderr: se.slice(-2000), data });
+      if (data.status === "failed" || data.error) {
+        const reason = data.reason || data.error || "unknown";
+        const stage = data.stage || "internal";
+        app.log.error({ event: "DIARIZE_FAILED", stage, reason, durationMs, stderr: se.slice(-2000) }, "diarize retornou falha");
+        return resolve({ status: "failed", stage, error: reason, model: data.model, stderr: se.slice(-2000), data });
       }
-      app.log.info({ event: "DIARIZE_SUCCESS", durationMs, turns: data.turns?.length ?? 0, speakers: data.speakers?.length ?? 0 }, "diarize ok");
-      resolve({ status: "success", data });
+      app.log.info({
+        event: "DIARIZE_SUCCESS",
+        model: data.model,
+        durationMs,
+        processingTimeMs: data.processing_time_ms,
+        turns: data.turns?.length ?? 0,
+        speakers: data.speakers?.length ?? 0,
+      }, "diarize ok");
+      resolve({ status: "success", model: data.model, processingTimeMs: data.processing_time_ms, data });
     });
   });
 }

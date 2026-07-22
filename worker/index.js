@@ -1390,7 +1390,25 @@ async function processJob(job) {
     if (splitWindows.length) {
       app.log.info({ windows: splitWindows.map((w) => ({ t0: +w.t0.toFixed(2), t1: +w.t1.toFixed(2) })) }, "split-screen nativo detectado no material original");
     }
-    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false, plan: reframePlan };
+
+    // Detecta se o material FONTE já é vertical (~9:16 ou mais estreito).
+    // Quando o usuário sobe um reels/short, qualquer reframe/normalize corta
+    // as pessoas. Nesse caso, passamos direto: só escala + pad pro output.
+    const srcDims = await ffprobeDims(cutFile).catch(() => null);
+    const srcAspect = srcDims ? srcDims.w / srcDims.h : null;
+    const outAspect = aw / ah;
+    const sourceIsVertical =
+      aw === 1080 && ah === 1920 && srcAspect != null && srcAspect <= 0.75;
+    const passthroughVertical = sourceIsVertical && Math.abs(srcAspect - outAspect) < 0.15;
+    if (sourceIsVertical) {
+      app.log.info(
+        { src: srcDims, srcAspect: +srcAspect.toFixed(3), passthrough: passthroughVertical },
+        "fonte já é vertical — desativando reframe/zoom para preservar o enquadramento original",
+      );
+    }
+
+    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false, plan: reframePlan, passthroughVertical, sourceIsVertical };
+
 
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];

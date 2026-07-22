@@ -27,15 +27,23 @@ import sys
 MODEL_PATH = os.environ.get("FACE_MODEL_PATH", "/opt/models/yolov10n-face.onnx")
 
 
+def _log(msg):
+    sys.stderr.write(f"[face_track] {msg}\n")
+    sys.stderr.flush()
+
+
 def _emit(payload):
     print(json.dumps(payload))
 
 
+_log(f"BOOT python={sys.version.split()[0]} pid={os.getpid()} argv={sys.argv}")
 try:
     import cv2  # type: ignore
     import numpy as np  # type: ignore
+    _log(f"cv2={cv2.__version__} numpy={np.__version__}")
 except Exception as e:
-    _emit({"error": f"opencv/numpy indisponível: {e}", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
+    _log(f"import cv2/numpy failed: {e}")
+    _emit({"status": "failed", "stage": "import_cv2", "error": f"opencv/numpy indisponível: {e}", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
     sys.exit(0)
 
 

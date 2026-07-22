@@ -844,33 +844,54 @@ async function extractAudioForDiarize(cutFile, wavPath) {
   await sh("ffmpeg", ["-y", "-i", cutFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath]);
 }
 
-// Roda diarize.py; retorna {turns, speakers} ou null.
+// Roda diarize.py; retorna { status, data?, error?, stage? } — nunca `null`
+// silencioso. Sprint 1a: qualquer falha aqui vira evidência explícita.
 async function runDiarizer(wavPath) {
+  const started = Date.now();
   if (!process.env.HF_TOKEN && !process.env.HUGGINGFACE_TOKEN) {
-    app.log.info("diarize: HF_TOKEN ausente, pulando");
-    return null;
+    app.log.warn({ event: "DIARIZE_SKIPPED", reason: "HF_TOKEN ausente" }, "diarize: pulando");
+    return { status: "skipped", stage: "no_hf_token", error: "HF_TOKEN/HUGGINGFACE_TOKEN não configurado" };
   }
+  let fileExists = false;
+  let fileSize = 0;
   try {
-    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "diarize.py");
-    const out = await new Promise((resolve, reject) => {
-      const p = spawn("python3", [script, wavPath], { stdio: ["ignore", "pipe", "pipe"] });
-      let so = "", se = "";
-      p.stdout.on("data", (d) => (so += d.toString()));
-      p.stderr.on("data", (d) => (se += d.toString()));
-      p.on("error", reject);
-      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`diarize exit ${code}: ${se.slice(0, 300)}`))));
-    });
-    const data = JSON.parse(out);
-    if (data.error) {
-      app.log.warn({ err: data.error }, "diarização falhou (fallback sem speaker awareness)");
-      return null;
-    }
-    if (!Array.isArray(data.turns) || data.turns.length === 0) return null;
-    return data;
-  } catch (err) {
-    app.log.warn({ err: err?.message }, "diarize.py crashou (fallback)");
-    return null;
+    const st = await stat(wavPath);
+    fileExists = true;
+    fileSize = st.size;
+  } catch {}
+  app.log.info({ event: "DIARIZE_START", wavPath, fileExists, fileSize }, "diarize: start");
+  if (!fileExists) {
+    return { status: "failed", stage: "wav_missing", error: `wav ausente: ${wavPath}` };
   }
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname), "diarize.py");
+  return await new Promise((resolve) => {
+    const p = spawn("python3", [script, wavPath], { stdio: ["ignore", "pipe", "pipe"] });
+    let so = "", se = "";
+    p.stdout.on("data", (d) => (so += d.toString()));
+    p.stderr.on("data", (d) => (se += d.toString()));
+    p.on("error", (err) => {
+      app.log.error({ event: "DIARIZE_FAILED", stage: "spawn", error: err.message, durationMs: Date.now() - started }, "diarize spawn falhou");
+      resolve({ status: "failed", stage: "spawn", error: err.message, stderr: se.slice(-2000) });
+    });
+    p.on("close", (code) => {
+      const durationMs = Date.now() - started;
+      if (code !== 0) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "exit", exitCode: code, durationMs, stderr: se.slice(-2000) }, "diarize exit != 0");
+        return resolve({ status: "failed", stage: "exit", error: `exit ${code}`, exitCode: code, stderr: se.slice(-2000) });
+      }
+      let data;
+      try { data = JSON.parse(so); } catch (err) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "parse", error: err.message, durationMs, stderr: se.slice(-2000) }, "diarize JSON inválido");
+        return resolve({ status: "failed", stage: "parse", error: err.message, stderr: se.slice(-2000) });
+      }
+      if (data.error) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "internal", error: data.error, durationMs, stderr: se.slice(-2000) }, "diarize retornou erro");
+        return resolve({ status: "failed", stage: "internal", error: data.error, stderr: se.slice(-2000), data });
+      }
+      app.log.info({ event: "DIARIZE_SUCCESS", durationMs, turns: data.turns?.length ?? 0, speakers: data.speakers?.length ?? 0 }, "diarize ok");
+      resolve({ status: "success", data });
+    });
+  });
 }
 
 

@@ -350,6 +350,7 @@ export async function emitDebugArtifacts({
   turns,
   speakers,
   reframePlan,
+  pipelineStatus,
   clipStart,
   clipEnd,
   duration,
@@ -359,14 +360,45 @@ export async function emitDebugArtifacts({
   const linksReport = buildLinksReport(reframePlan, turns);
   const { decisions, switches } = buildDecisionsAndSwitches(reframePlan, turns);
   const cameraTrace = buildCameraTrace(reframePlan);
-  const diagnosis = buildDiagnosis({
-    tracksReport,
-    linksReport,
-    decisions,
-    switches,
-    turns,
-    duration,
-  });
+
+  // Sprint 1a — se o pipeline não rodou de verdade, o diagnóstico heurístico
+  // é ruído. Emitimos um veredito explícito de invalid_pipeline_run.
+  const pipelineOk =
+    pipelineStatus?.face_tracker?.status === "success" &&
+    pipelineStatus?.reframe_plan?.status === "success" &&
+    (track?.w ?? 0) > 0 &&
+    (track?.tracks?.length ?? 0) > 0;
+
+  let diagnosis;
+  if (!pipelineOk) {
+    diagnosis = {
+      schema: SCHEMA,
+      status: "invalid_pipeline_run",
+      primary_culprit: "reframe_bootstrap_failure",
+      camera_diagnosis_available: false,
+      confidence: 1,
+      pipeline_status: pipelineStatus ?? null,
+      evidence: [
+        `face_tracker.status=${pipelineStatus?.face_tracker?.status ?? "unknown"}` +
+          (pipelineStatus?.face_tracker?.error ? ` (${pipelineStatus.face_tracker.error})` : ""),
+        `diarize.status=${pipelineStatus?.diarize?.status ?? "unknown"}` +
+          (pipelineStatus?.diarize?.error ? ` (${pipelineStatus.diarize.error})` : ""),
+        `reframe_plan.status=${pipelineStatus?.reframe_plan?.status ?? "unknown"}` +
+          (pipelineStatus?.reframe_plan?.error ? ` (${pipelineStatus.reframe_plan.error})` : ""),
+        `frame=${track?.w ?? 0}x${track?.h ?? 0}, detector=${track?.detector ?? "unknown"}, raw_tracks=${track?.tracks?.length ?? 0}`,
+      ],
+      notes: [
+        "O pipeline de reframe não executou. A qualidade do enquadramento NÃO pode ser avaliada.",
+        "Investigue os campos error/stage/stderr_tail de pipeline_status antes de tocar em qualquer heurística.",
+      ],
+    };
+  } else {
+    diagnosis = buildDiagnosis({ tracksReport, linksReport, decisions, switches, turns, duration });
+    diagnosis.status = "valid";
+    diagnosis.camera_diagnosis_available = true;
+    diagnosis.pipeline_status = pipelineStatus ?? null;
+  }
+
   const manifest = {
     schema: SCHEMA,
     job_id: jobId,
@@ -376,6 +408,8 @@ export async function emitDebugArtifacts({
     frame: { w: track?.w ?? 0, h: track?.h ?? 0 },
     detector: track?.detector ?? "unknown",
     speakers,
+    pipeline_status: pipelineStatus ?? null,
+    pipeline_ok: pipelineOk,
     counts: {
       raw_tracks: track?.tracks?.length ?? 0,
       kept_tracks: reframePlan?.tracks?.length ?? 0,
@@ -396,6 +430,7 @@ export async function emitDebugArtifacts({
     ["decisions.jsonl", encL(decisions)],
     ["camera_trace.jsonl", encL(cameraTrace)],
     ["diagnosis.json", enc(diagnosis)],
+    ["pipeline_status.json", enc({ schema: SCHEMA, pipeline_status: pipelineStatus ?? null, pipeline_ok: pipelineOk })],
   ];
 
   const uploaded = [];
@@ -404,8 +439,9 @@ export async function emitDebugArtifacts({
     if (ok) uploaded.push(name);
   }
   workerLog?.info?.(
-    { jobId, uploaded, culprit: diagnosis.primary_culprit, confidence: diagnosis.confidence },
+    { jobId, uploaded, status: diagnosis.status, culprit: diagnosis.primary_culprit, confidence: diagnosis.confidence, pipeline_ok: pipelineOk },
     "debug artifacts emitted",
   );
-  return { uploaded, diagnosis };
+  return { uploaded, diagnosis, pipelineOk };
 }
+

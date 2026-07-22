@@ -1396,7 +1396,7 @@ async function processJob(job) {
     // as pessoas. Nesse caso, passamos direto: só escala + pad pro output.
     const srcDims = await ffprobeDims(cutFile).catch(() => null);
     const srcAspect = srcDims ? srcDims.w / srcDims.h : null;
-    const outAspect = aw / ah;
+    // outAspect não é usado atualmente — passthrough vale para qualquer vertical
     const sourceIsVertical =
       aw === 1080 && ah === 1920 && srcAspect != null && srcAspect <= 0.75;
     const passthroughVertical = sourceIsVertical; // qualquer vertical: passa direto com pad

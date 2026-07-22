@@ -294,7 +294,20 @@ export function EditClipDrawer({
           </div>
         </div>
 
-        <SheetFooter className="mt-6 flex-row justify-end gap-2 sm:justify-end">
+        <SheetFooter className="mt-6 flex-row flex-wrap justify-end gap-2 sm:justify-end">
+          <Button
+            variant="outline"
+            onClick={() => rerender.mutate()}
+            disabled={rerender.isPending}
+            className="border-fuchsia-500/40 bg-transparent font-bold text-fuchsia-200 hover:bg-fuchsia-500/10"
+          >
+            {rerender.isPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 size-4" />
+            )}
+            Renderizar novamente
+          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending} className="font-bold">
             {save.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}

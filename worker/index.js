@@ -1582,6 +1582,9 @@ async function processJob(job) {
       progress: 100,
       output_path: edl.output.path,
       worker_id: WORKER_ID,
+      reframe_status: job.__reframeOk ? "success" : "failed",
+      render_status: job.__reframeOk ? "completed" : "completed_with_reframe_fallback",
+      pipeline_status: job.__pipelineStatus ?? null,
     });
   } catch (err) {
     app.log.error({ err, job_id }, "job falhou");

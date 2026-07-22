@@ -49,17 +49,23 @@ except Exception as e:
 
 # -------------------- YOLO / Haar --------------------
 def load_yolo():
-    if not os.path.isfile(MODEL_PATH):
+    exists = os.path.isfile(MODEL_PATH)
+    size = os.path.getsize(MODEL_PATH) if exists else 0
+    _log(f"model_path={MODEL_PATH} exists={exists} size={size}")
+    if not exists:
+        _log("model file missing; falling back to Haar")
         return None
     try:
         import onnxruntime as ort  # type: ignore
+        _log(f"onnxruntime={ort.__version__} providers_available={ort.get_available_providers()}")
         sess = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
+        _log(f"ort provider_selected={sess.get_providers()}")
         inp = sess.get_inputs()[0]
         h = inp.shape[2] if isinstance(inp.shape[2], int) else 640
         w = inp.shape[3] if isinstance(inp.shape[3], int) else 640
         return sess, inp.name, (w, h)
     except Exception as e:
-        sys.stderr.write(f"[face_track] yolo load falhou: {e}\n")
+        _log(f"yolo load failed: {e}")
         return None
 
 

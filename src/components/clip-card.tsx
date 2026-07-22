@@ -205,7 +205,14 @@ export function ClipCard({
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `clipfy-${clip.id}.mp4`;
+                  const safeTitle = (clip.title ?? "clipfy")
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^\w\s-]/g, "")
+                    .trim()
+                    .replace(/\s+/g, "-")
+                    .slice(0, 80) || "clipfy";
+                  a.download = `${safeTitle}.mp4`;
                   document.body.appendChild(a);
                   a.click();
                   a.remove();

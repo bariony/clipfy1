@@ -1,0 +1,1 @@
+UPDATE public.projects SET debug_reframe = true WHERE id = '61004ec2-09fb-49e3-9e39-55971dc39a51';

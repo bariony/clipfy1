@@ -1399,7 +1399,7 @@ async function processJob(job) {
     const outAspect = aw / ah;
     const sourceIsVertical =
       aw === 1080 && ah === 1920 && srcAspect != null && srcAspect <= 0.75;
-    const passthroughVertical = sourceIsVertical && Math.abs(srcAspect - outAspect) < 0.15;
+    const passthroughVertical = sourceIsVertical; // qualquer vertical: passa direto com pad
     if (sourceIsVertical) {
       app.log.info(
         { src: srcDims, srcAspect: +srcAspect.toFixed(3), passthrough: passthroughVertical },

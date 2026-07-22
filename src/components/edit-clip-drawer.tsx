@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, Save, Wand2 } from "lucide-react";
+import { Loader2, RefreshCw, Save, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import { CAPTION_TEMPLATES } from "@/lib/caption-templates";
 import { formatDuration, type Clip, type TranscriptSegment } from "@/lib/projects";
 import { isScenePlan, LAYOUT_LABEL } from "@/lib/scene-plan";
 import { regenerateScenePlan } from "@/lib/scene-plan.functions";
+import { enqueueClipRender } from "@/lib/render.functions";
 
 type Props = {
   open: boolean;
@@ -103,6 +104,21 @@ export function EditClipDrawer({
     },
     onError: (err: unknown) =>
       toast.error(err instanceof Error ? err.message : "Falha ao gerar plano de cenas"),
+  });
+
+  const enqueueRenderFn = useServerFn(enqueueClipRender);
+  const rerender = useMutation({
+    mutationFn: () => {
+      if (!clip) throw new Error("no clip");
+      return enqueueRenderFn({ data: { clipId: clip.id } });
+    },
+    onSuccess: () => {
+      toast.success("Render enviado. Acompanhe no card do corte.");
+      qc.invalidateQueries({ queryKey: ["render-job", clip?.id] });
+      qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar render"),
   });
 
   if (!clip) return null;
@@ -278,7 +294,20 @@ export function EditClipDrawer({
           </div>
         </div>
 
-        <SheetFooter className="mt-6 flex-row justify-end gap-2 sm:justify-end">
+        <SheetFooter className="mt-6 flex-row flex-wrap justify-end gap-2 sm:justify-end">
+          <Button
+            variant="outline"
+            onClick={() => rerender.mutate()}
+            disabled={rerender.isPending}
+            className="border-fuchsia-500/40 bg-transparent font-bold text-fuchsia-200 hover:bg-fuchsia-500/10"
+          >
+            {rerender.isPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 size-4" />
+            )}
+            Renderizar novamente
+          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending} className="font-bold">
             {save.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}

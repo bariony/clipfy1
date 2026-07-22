@@ -106,6 +106,21 @@ export function EditClipDrawer({
       toast.error(err instanceof Error ? err.message : "Falha ao gerar plano de cenas"),
   });
 
+  const enqueueRenderFn = useServerFn(enqueueClipRender);
+  const rerender = useMutation({
+    mutationFn: () => {
+      if (!clip) throw new Error("no clip");
+      return enqueueRenderFn({ data: { clipId: clip.id } });
+    },
+    onSuccess: () => {
+      toast.success("Render enviado. Acompanhe no card do corte.");
+      qc.invalidateQueries({ queryKey: ["render-job", clip?.id] });
+      qc.invalidateQueries({ queryKey: ["projects", projectId, "clips"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar render"),
+  });
+
   if (!clip) return null;
 
   const scenePlan = isScenePlan(clip.scene_plan) ? clip.scene_plan : null;

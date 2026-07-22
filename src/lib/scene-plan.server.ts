@@ -201,7 +201,7 @@ Gere o plano de cenas (JSON puro).`;
       },
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
-        temperature: 0.4,
+        temperature: 0.7,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },

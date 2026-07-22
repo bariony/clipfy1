@@ -1458,11 +1458,22 @@ async function processJob(job) {
         "-r", "30", "-pix_fmt", "yuv420p",
       ];
 
+      // Passthrough vertical: fonte já é 9:16, só escala + pad. Sem crop, sem zoom.
+      if (sceneCtx.passthroughVertical) {
+        const seg = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
+        const dur = Math.max(0.15, t1 - t0);
+        const vf = `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+        await sh("ffmpeg", ["-y", "-ss", t0.toFixed(3), "-i", cutFile, "-t", dur.toFixed(3), "-vf", vf, ...encArgs, seg]);
+        sceneFiles.push(seg);
+        continue;
+      }
+
       // Plan-driven render (auto-reframe v2) — só para 9:16 e quando o plano existe
       // e a cena não cai em split-screen nativo (esse caminho preserva a composição).
       const useNativeSplit = aw === 1080 && ah === 1920 && sceneIsNativeSplit(sceneCtx.splitWindows, t0, t1);
       let planned = false;
-      if (reframePlan && aw === 1080 && ah === 1920 && !useNativeSplit) {
+      if (reframePlan && aw === 1080 && ah === 1920 && !useNativeSplit && !sceneCtx.sourceIsVertical) {
+
         try {
           const samples = reframePlan.sliceRange(t0, t1).filter((s) => s.cam);
           if (samples.length >= 2) {

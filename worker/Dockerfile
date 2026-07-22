@@ -7,12 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       python3 \
       python3-pip \
-      python3-opencv \
-      python3-numpy \
       curl \
       unzip \
       ca-certificates \
       build-essential \
+      libgl1 \
+      libglib2.0-0 \
       libcairo2 \
       libcairo2-dev \
       libpango-1.0-0 \
@@ -25,11 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       librsvg2-dev \
       fonts-dejavu-core \
       fontconfig \
-    && python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider onnxruntime \
+    && python3 -m pip install --break-system-packages --no-cache-dir \
+         "numpy<2" "opencv-python-headless==4.10.0.84" onnxruntime yt-dlp bgutil-ytdlp-pot-provider \
     && python3 -m pip install --break-system-packages --no-cache-dir \
          torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
     && python3 -m pip install --break-system-packages --no-cache-dir \
          "pyannote.audio==3.3.2" "speechbrain==1.0.2" \
+    && python3 -m pip install --break-system-packages --no-cache-dir --force-reinstall --no-deps \
+         "numpy<2" \
+    && python3 -c "import numpy, cv2, onnxruntime; print('numpy', numpy.__version__, 'cv2', cv2.__version__, 'ort', onnxruntime.__version__)" \
     && mkdir -p /opt/models /opt/hf-cache \
     && curl -fsSL -o /opt/models/yolov10n-face.onnx https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov10n-face.onnx \
     && ln -sf /usr/local/bin/yt-dlp /usr/bin/yt-dlp \

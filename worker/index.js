@@ -1221,12 +1221,31 @@ async function processJob(job) {
 
     // 2.5. Face tracking do clipe cortado — descobre posições REAIS dos rostos
     // pra alimentar o crop por cena (substitui as colunas 480/1440 fixas).
-    const track = await runFaceTracker(cutFile, 4);
+    const pipelineStatus = {
+      face_tracker: { status: "not_run" },
+      diarize: { status: "not_run" },
+      reframe_plan: { status: "not_run" },
+    };
+    const trackerRes = await runFaceTracker(cutFile, 4);
+    pipelineStatus.face_tracker = {
+      status: trackerRes.status,
+      stage: trackerRes.stage ?? null,
+      error: trackerRes.error ?? null,
+      exit_code: trackerRes.exitCode ?? null,
+      stderr_tail: (trackerRes.stderr ?? trackerRes.stderrTail ?? "").slice(-800),
+      frames_processed: trackerRes.data?.frames_processed ?? trackerRes.data?.frames?.length ?? 0,
+      detections: trackerRes.data?.detections ?? null,
+      tracks: trackerRes.data?.tracks?.length ?? 0,
+      detector: trackerRes.data?.detector ?? null,
+      w: trackerRes.data?.w ?? 0,
+      h: trackerRes.data?.h ?? 0,
+    };
+    const track = trackerRes.status === "success" ? trackerRes.data : null;
     const cluster = clusterFaces(track);
     if (cluster) {
       app.log.info({ detector: track?.detector, cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w }, samples: track?.frames?.length }, "face tracker: clusters detectados");
     } else {
-      app.log.info({ detector: track?.detector }, "face tracker: sem clusters (fallback colunas)");
+      app.log.info({ detector: track?.detector, tracker_status: trackerRes.status }, "face tracker: sem clusters (fallback colunas)");
     }
     await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 
@@ -1237,7 +1256,17 @@ async function processJob(job) {
     try {
       const wavPath = path.join(jobDir, "audio.wav");
       await extractAudioForDiarize(cutFile, wavPath);
-      const diarResult = await runDiarizer(wavPath);
+      const diarRes = await runDiarizer(wavPath);
+      pipelineStatus.diarize = {
+        status: diarRes.status,
+        stage: diarRes.stage ?? null,
+        error: diarRes.error ?? null,
+        exit_code: diarRes.exitCode ?? null,
+        stderr_tail: (diarRes.stderr ?? "").slice(-800),
+        turns: diarRes.data?.turns?.length ?? 0,
+        speakers: diarRes.data?.speakers?.length ?? 0,
+      };
+      const diarResult = diarRes.status === "success" ? diarRes.data : null;
       if (diarResult?.turns?.length && track?.w) {
         const speakerCentroids = computeSpeakerCentroids(track, diarResult.turns);
         diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids };
@@ -1249,27 +1278,50 @@ async function processJob(job) {
           ),
         }, "diarize: fala↔rosto amarrados");
       } else if (diarResult?.turns?.length) {
-        // Diarizou mas sem tracker — ainda serve pra saber quem fala (não pra focar).
         diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids: {} };
       }
     } catch (err) {
-      app.log.warn({ err: err?.message }, "diarização crashou (segue sem)");
+      pipelineStatus.diarize = { status: "failed", stage: "extract_audio", error: err?.message ?? String(err) };
+      app.log.error({ event: "DIARIZE_FAILED", stage: "extract_audio", error: err?.message }, "diarização crashou");
     }
     await sendCallback({ job_id, status: "processing", progress: 55, worker_id: WORKER_ID });
 
-    // 2.7. Auto-Reframe v2 — plano global (tracks persistentes + speaker links
-    // + camera controller + framer cinematográfico). Substitui a antiga escolha
-    // por centroide+massa por cena.
+    // 2.7. Auto-Reframe v2 — plano global. Se face tracker não rodou, o plano
+    // não pode existir — isso precisa ser gritado, não escondido.
     let reframePlan = null;
-    try {
-      if (track?.tracks?.length) {
+    if (!track) {
+      pipelineStatus.reframe_plan = {
+        status: "skipped",
+        stage: "no_face_tracker",
+        error: "face tracker não produziu dados válidos; reframe não pôde iniciar",
+      };
+      app.log.warn({ event: "REFRAME_PLAN_SKIPPED", reason: "no_tracker" }, "reframe: pulado por falta de tracker");
+    } else if (!track.tracks?.length) {
+      pipelineStatus.reframe_plan = {
+        status: "skipped",
+        stage: "no_persistent_tracks",
+        error: "face tracker rodou mas não gerou tracks persistentes",
+      };
+      app.log.warn({ event: "REFRAME_PLAN_SKIPPED", reason: "no_persistent_tracks", frames: track.frames?.length ?? 0, detections: track.detections ?? null }, "reframe: sem tracks persistentes");
+    } else {
+      try {
         reframePlan = buildReframePlan({ track, turns: diar?.turns || [], log: app.log });
-      } else {
-        app.log.info("reframe: sem tracks persistentes, usando pipeline legado");
+        pipelineStatus.reframe_plan = {
+          status: "success",
+          samples: reframePlan?.cameraPath?.length ?? 0,
+          links: Object.keys(reframePlan?.speakerLinks ?? {}).length,
+        };
+      } catch (err) {
+        pipelineStatus.reframe_plan = { status: "failed", stage: "build", error: err?.message ?? String(err) };
+        app.log.error({ event: "REFRAME_PLAN_FAILED", error: err?.message }, "reframe plan crashou");
       }
-    } catch (err) {
-      app.log.warn({ err: err?.message }, "reframe plan crashou (segue no legado)");
     }
+
+    const reframeOk = pipelineStatus.reframe_plan.status === "success" && !!reframePlan;
+    app.log.info(
+      { event: "PIPELINE_STATUS", pipelineStatus, reframe_ok: reframeOk },
+      "pipeline status snapshot",
+    );
 
     // Sprint 1a — Modo Diagnóstico: emite artefatos sobre o pipeline atual.
     // NÃO modifica decisões. Só observa. Ver worker/DEBUG.md.
@@ -1283,6 +1335,7 @@ async function processJob(job) {
           turns: diar?.turns || [],
           speakers: diar?.speakers || [],
           reframePlan,
+          pipelineStatus,
           clipStart: start,
           clipEnd: end,
           duration,
@@ -1292,6 +1345,11 @@ async function processJob(job) {
         app.log.warn({ err: err?.message }, "debug artifacts: falha (segue normalmente)");
       }
     }
+
+    // Guarda pra usar no callback final.
+    job.__pipelineStatus = pipelineStatus;
+    job.__reframeOk = reframeOk;
+
 
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma

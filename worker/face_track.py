@@ -283,14 +283,24 @@ class SimpleTracker:
 # -------------------- Main --------------------
 def main():
     if len(sys.argv) < 2:
-        _emit({"error": "missing video arg", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
+        _log("FAIL missing video arg")
+        _emit({"status": "failed", "stage": "args", "error": "missing video arg", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
         return
     video = sys.argv[1]
     sample_fps = float(sys.argv[2]) if len(sys.argv) > 2 else 4.0
 
+    v_abs = os.path.abspath(video)
+    v_exists = os.path.isfile(v_abs)
+    v_size = os.path.getsize(v_abs) if v_exists else 0
+    _log(f"video_path={v_abs} exists={v_exists} size={v_size} sample_fps={sample_fps}")
+    if not v_exists:
+        _emit({"status": "failed", "stage": "video_missing", "error": f"video not found: {v_abs}", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
+        return
+
     cap = cv2.VideoCapture(video)
     if not cap.isOpened():
-        _emit({"error": "cannot open video", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
+        _log("FAIL cv2.VideoCapture could not open")
+        _emit({"status": "failed", "stage": "cv2_open", "error": "cannot open video", "w": 0, "h": 0, "frames": [], "tracks": [], "detector": "none"})
         return
 
     vfps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -300,21 +310,24 @@ def main():
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     duration = frame_count / vfps if frame_count > 0 else 0.0
+    _log(f"video_dims w={w} h={h} fps={vfps} frame_count={frame_count} duration={duration:.2f}")
     if w <= 0 or h <= 0:
         cap.release()
-        _emit({"error": "invalid dimensions", "w": w, "h": h, "frames": [], "tracks": [], "detector": "none"})
+        _emit({"status": "failed", "stage": "invalid_dimensions", "error": "invalid dimensions", "w": w, "h": h, "frames": [], "tracks": [], "detector": "none"})
         return
 
     step = max(1, int(round(vfps / max(0.25, sample_fps))))
 
     yolo = load_yolo()
     detector_name = "yolov10n-face" if yolo else "haar"
+    _log(f"detector={detector_name}")
     cascade = None
     if not yolo:
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         if cascade.empty():
             cap.release()
-            _emit({"error": "haar cascade empty and no yolo", "w": w, "h": h, "frames": [], "tracks": [], "detector": "none"})
+            _log("FAIL haar cascade empty and no yolo")
+            _emit({"status": "failed", "stage": "no_detector", "error": "haar cascade empty and no yolo", "w": w, "h": h, "frames": [], "tracks": [], "detector": "none"})
             return
 
     tracker = SimpleTracker(w, h)
@@ -324,6 +337,8 @@ def main():
     splits = []
     prev_hist = None
     idx = 0
+    total_detections = 0
+    frame_failures = 0
 
     while True:
         ret, frame = cap.read()
@@ -338,9 +353,12 @@ def main():
                 else:
                     faces = haar_detect(cascade, frame)
             except Exception as e:
-                sys.stderr.write(f"[face_track] frame {idx} falhou: {e}\n")
+                frame_failures += 1
+                if frame_failures <= 3:
+                    _log(f"frame {idx} detect failed: {e}")
                 faces = []
 
+            total_detections += len(faces)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             try:
                 split = bool(detect_native_split(gray))
@@ -358,7 +376,6 @@ def main():
             except Exception:
                 pass
 
-            # Atualiza tracker persistente
             tracker.update(faces, t_sec, frame)
 
             frames.append({"t": t_sec, "faces": faces, "split": split, "shot": shot})
@@ -382,21 +399,25 @@ def main():
     all_tracks = tracker.finalize()
     tracks_out = []
     for tr in all_tracks:
-        # Filtra tracks efêmeros ainda no python — mínimo 2 hits (~0.5s @ 4fps).
         if len(tr.frames_out) < 2:
             continue
         tracks_out.append({"id": tr.id, "frames": tr.frames_out})
 
+    _log(f"DONE frames_sampled={len(frames)} detections={total_detections} tracks={len(tracks_out)} frame_failures={frame_failures}")
     _emit({
+        "status": "success",
         "w": w, "h": h,
         "detector": detector_name,
         "fps_sample": sample_fps,
         "duration": round(duration, 3),
+        "frames_processed": len(frames),
+        "detections": total_detections,
         "frames": frames,
         "tracks": tracks_out,
         "shots": shots,
         "splits": splits,
     })
+
 
 
 if __name__ == "__main__":

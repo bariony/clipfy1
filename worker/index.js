@@ -571,31 +571,85 @@ function speakerColumnMap(edl) {
 }
 
 // -------------------- FACE TRACKING --------------------
-// Roda o script Python face_track.py sobre o clipe cortado e devolve
-// { w, h, frames: [{t, faces:[[x,y,w,h]]}] }. Sem OpenCV ou vídeo inválido,
-// devolve null e o pipeline cai pro heurística de colunas fixas.
+// Roda o script Python face_track.py sobre o clipe cortado. Retorna sempre um
+// objeto estruturado com { status, data? , error?, stage? } — NÃO retorna
+// mais `null` silenciosamente. Sprint 1a: qualquer falha aqui é registrada
+// para que o diagnóstico distinga "tracker rodou e não achou rosto" de
+// "tracker não rodou".
 async function runFaceTracker(videoPath, sampleFps = 2) {
+  const started = Date.now();
+  let fileExists = false;
+  let fileSize = 0;
   try {
-    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "face_track.py");
-    const out = await new Promise((resolve, reject) => {
-      const p = spawn("python3", [script, videoPath, String(sampleFps)], { stdio: ["ignore", "pipe", "pipe"] });
-      let so = "", se = "";
-      p.stdout.on("data", (d) => (so += d.toString()));
-      p.stderr.on("data", (d) => (se += d.toString()));
-      p.on("error", reject);
-      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`face_track exit ${code}: ${se.slice(0, 200)}`))));
-    });
-    const data = JSON.parse(out);
-    if (data.error) {
-      app.log.warn({ err: data.error }, "face tracker retornou erro (usando fallback)");
-      return null;
-    }
-    if (!Array.isArray(data.frames) || data.frames.length === 0) return null;
-    return data;
-  } catch (err) {
-    app.log.warn({ err: err?.message }, "face tracker falhou (usando fallback de colunas)");
-    return null;
+    const st = await stat(videoPath);
+    fileExists = true;
+    fileSize = st.size;
+  } catch {}
+  app.log.info(
+    { event: "FACE_TRACKER_START", videoPath, fileExists, fileSize, sampleFps },
+    "face tracker: start",
+  );
+  if (!fileExists) {
+    const error = `video ausente: ${videoPath}`;
+    app.log.error({ event: "FACE_TRACKER_FAILED", stage: "video_missing", error }, "face tracker: sem arquivo");
+    return { status: "failed", stage: "video_missing", error };
   }
+
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname), "face_track.py");
+  return await new Promise((resolve) => {
+    const p = spawn("python3", [script, videoPath, String(sampleFps)], { stdio: ["ignore", "pipe", "pipe"] });
+    let so = "", se = "";
+    p.stdout.on("data", (d) => (so += d.toString()));
+    p.stderr.on("data", (d) => (se += d.toString()));
+    p.on("error", (err) => {
+      app.log.error(
+        { event: "FACE_TRACKER_FAILED", stage: "spawn", error: err.message, durationMs: Date.now() - started },
+        "face tracker: spawn falhou",
+      );
+      resolve({ status: "failed", stage: "spawn", error: err.message, stderr: se.slice(-2000) });
+    });
+    p.on("close", (code) => {
+      const durationMs = Date.now() - started;
+      if (code !== 0) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: "exit", exitCode: code, durationMs, stderr: se.slice(-2000) },
+          "face tracker: exit != 0",
+        );
+        return resolve({ status: "failed", stage: "exit", error: `exit ${code}`, exitCode: code, stderr: se.slice(-2000) });
+      }
+      let data;
+      try {
+        data = JSON.parse(so);
+      } catch (err) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: "parse", error: err.message, durationMs, stdoutHead: so.slice(0, 500), stderr: se.slice(-2000) },
+          "face tracker: JSON inválido",
+        );
+        return resolve({ status: "failed", stage: "parse", error: err.message, stderr: se.slice(-2000) });
+      }
+      if (data.status === "failed" || data.error) {
+        app.log.error(
+          { event: "FACE_TRACKER_FAILED", stage: data.stage ?? "internal", error: data.error, durationMs, stderr: se.slice(-2000) },
+          "face tracker: retornou erro interno",
+        );
+        return resolve({ status: "failed", stage: data.stage ?? "internal", error: data.error, stderr: se.slice(-2000), data });
+      }
+      app.log.info(
+        {
+          event: "FACE_TRACKER_SUCCESS",
+          durationMs,
+          detector: data.detector,
+          w: data.w,
+          h: data.h,
+          frames_processed: data.frames_processed ?? data.frames?.length ?? 0,
+          detections: data.detections ?? null,
+          tracks: data.tracks?.length ?? 0,
+        },
+        "face tracker: ok",
+      );
+      resolve({ status: "success", data, stderrTail: se.slice(-500) });
+    });
+  });
 }
 
 // Clusterização 1D simples: pega todos os centros X detectados, ordena,
@@ -790,33 +844,54 @@ async function extractAudioForDiarize(cutFile, wavPath) {
   await sh("ffmpeg", ["-y", "-i", cutFile, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath]);
 }
 
-// Roda diarize.py; retorna {turns, speakers} ou null.
+// Roda diarize.py; retorna { status, data?, error?, stage? } — nunca `null`
+// silencioso. Sprint 1a: qualquer falha aqui vira evidência explícita.
 async function runDiarizer(wavPath) {
+  const started = Date.now();
   if (!process.env.HF_TOKEN && !process.env.HUGGINGFACE_TOKEN) {
-    app.log.info("diarize: HF_TOKEN ausente, pulando");
-    return null;
+    app.log.warn({ event: "DIARIZE_SKIPPED", reason: "HF_TOKEN ausente" }, "diarize: pulando");
+    return { status: "skipped", stage: "no_hf_token", error: "HF_TOKEN/HUGGINGFACE_TOKEN não configurado" };
   }
+  let fileExists = false;
+  let fileSize = 0;
   try {
-    const script = path.join(path.dirname(new URL(import.meta.url).pathname), "diarize.py");
-    const out = await new Promise((resolve, reject) => {
-      const p = spawn("python3", [script, wavPath], { stdio: ["ignore", "pipe", "pipe"] });
-      let so = "", se = "";
-      p.stdout.on("data", (d) => (so += d.toString()));
-      p.stderr.on("data", (d) => (se += d.toString()));
-      p.on("error", reject);
-      p.on("close", (code) => (code === 0 ? resolve(so) : reject(new Error(`diarize exit ${code}: ${se.slice(0, 300)}`))));
-    });
-    const data = JSON.parse(out);
-    if (data.error) {
-      app.log.warn({ err: data.error }, "diarização falhou (fallback sem speaker awareness)");
-      return null;
-    }
-    if (!Array.isArray(data.turns) || data.turns.length === 0) return null;
-    return data;
-  } catch (err) {
-    app.log.warn({ err: err?.message }, "diarize.py crashou (fallback)");
-    return null;
+    const st = await stat(wavPath);
+    fileExists = true;
+    fileSize = st.size;
+  } catch {}
+  app.log.info({ event: "DIARIZE_START", wavPath, fileExists, fileSize }, "diarize: start");
+  if (!fileExists) {
+    return { status: "failed", stage: "wav_missing", error: `wav ausente: ${wavPath}` };
   }
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname), "diarize.py");
+  return await new Promise((resolve) => {
+    const p = spawn("python3", [script, wavPath], { stdio: ["ignore", "pipe", "pipe"] });
+    let so = "", se = "";
+    p.stdout.on("data", (d) => (so += d.toString()));
+    p.stderr.on("data", (d) => (se += d.toString()));
+    p.on("error", (err) => {
+      app.log.error({ event: "DIARIZE_FAILED", stage: "spawn", error: err.message, durationMs: Date.now() - started }, "diarize spawn falhou");
+      resolve({ status: "failed", stage: "spawn", error: err.message, stderr: se.slice(-2000) });
+    });
+    p.on("close", (code) => {
+      const durationMs = Date.now() - started;
+      if (code !== 0) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "exit", exitCode: code, durationMs, stderr: se.slice(-2000) }, "diarize exit != 0");
+        return resolve({ status: "failed", stage: "exit", error: `exit ${code}`, exitCode: code, stderr: se.slice(-2000) });
+      }
+      let data;
+      try { data = JSON.parse(so); } catch (err) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "parse", error: err.message, durationMs, stderr: se.slice(-2000) }, "diarize JSON inválido");
+        return resolve({ status: "failed", stage: "parse", error: err.message, stderr: se.slice(-2000) });
+      }
+      if (data.error) {
+        app.log.error({ event: "DIARIZE_FAILED", stage: "internal", error: data.error, durationMs, stderr: se.slice(-2000) }, "diarize retornou erro");
+        return resolve({ status: "failed", stage: "internal", error: data.error, stderr: se.slice(-2000), data });
+      }
+      app.log.info({ event: "DIARIZE_SUCCESS", durationMs, turns: data.turns?.length ?? 0, speakers: data.speakers?.length ?? 0 }, "diarize ok");
+      resolve({ status: "success", data });
+    });
+  });
 }
 
 
@@ -1146,12 +1221,31 @@ async function processJob(job) {
 
     // 2.5. Face tracking do clipe cortado — descobre posições REAIS dos rostos
     // pra alimentar o crop por cena (substitui as colunas 480/1440 fixas).
-    const track = await runFaceTracker(cutFile, 4);
+    const pipelineStatus = {
+      face_tracker: { status: "not_run" },
+      diarize: { status: "not_run" },
+      reframe_plan: { status: "not_run" },
+    };
+    const trackerRes = await runFaceTracker(cutFile, 4);
+    pipelineStatus.face_tracker = {
+      status: trackerRes.status,
+      stage: trackerRes.stage ?? null,
+      error: trackerRes.error ?? null,
+      exit_code: trackerRes.exitCode ?? null,
+      stderr_tail: (trackerRes.stderr ?? trackerRes.stderrTail ?? "").slice(-800),
+      frames_processed: trackerRes.data?.frames_processed ?? trackerRes.data?.frames?.length ?? 0,
+      detections: trackerRes.data?.detections ?? null,
+      tracks: trackerRes.data?.tracks?.length ?? 0,
+      detector: trackerRes.data?.detector ?? null,
+      w: trackerRes.data?.w ?? 0,
+      h: trackerRes.data?.h ?? 0,
+    };
+    const track = trackerRes.status === "success" ? trackerRes.data : null;
     const cluster = clusterFaces(track);
     if (cluster) {
       app.log.info({ detector: track?.detector, cluster: { A: cluster.A, B: cluster.B, single: cluster.single, w: cluster.w }, samples: track?.frames?.length }, "face tracker: clusters detectados");
     } else {
-      app.log.info({ detector: track?.detector }, "face tracker: sem clusters (fallback colunas)");
+      app.log.info({ detector: track?.detector, tracker_status: trackerRes.status }, "face tracker: sem clusters (fallback colunas)");
     }
     await sendCallback({ job_id, status: "processing", progress: 48, worker_id: WORKER_ID });
 
@@ -1162,7 +1256,17 @@ async function processJob(job) {
     try {
       const wavPath = path.join(jobDir, "audio.wav");
       await extractAudioForDiarize(cutFile, wavPath);
-      const diarResult = await runDiarizer(wavPath);
+      const diarRes = await runDiarizer(wavPath);
+      pipelineStatus.diarize = {
+        status: diarRes.status,
+        stage: diarRes.stage ?? null,
+        error: diarRes.error ?? null,
+        exit_code: diarRes.exitCode ?? null,
+        stderr_tail: (diarRes.stderr ?? "").slice(-800),
+        turns: diarRes.data?.turns?.length ?? 0,
+        speakers: diarRes.data?.speakers?.length ?? 0,
+      };
+      const diarResult = diarRes.status === "success" ? diarRes.data : null;
       if (diarResult?.turns?.length && track?.w) {
         const speakerCentroids = computeSpeakerCentroids(track, diarResult.turns);
         diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids };
@@ -1174,27 +1278,50 @@ async function processJob(job) {
           ),
         }, "diarize: fala↔rosto amarrados");
       } else if (diarResult?.turns?.length) {
-        // Diarizou mas sem tracker — ainda serve pra saber quem fala (não pra focar).
         diar = { turns: diarResult.turns, speakers: diarResult.speakers, speakerCentroids: {} };
       }
     } catch (err) {
-      app.log.warn({ err: err?.message }, "diarização crashou (segue sem)");
+      pipelineStatus.diarize = { status: "failed", stage: "extract_audio", error: err?.message ?? String(err) };
+      app.log.error({ event: "DIARIZE_FAILED", stage: "extract_audio", error: err?.message }, "diarização crashou");
     }
     await sendCallback({ job_id, status: "processing", progress: 55, worker_id: WORKER_ID });
 
-    // 2.7. Auto-Reframe v2 — plano global (tracks persistentes + speaker links
-    // + camera controller + framer cinematográfico). Substitui a antiga escolha
-    // por centroide+massa por cena.
+    // 2.7. Auto-Reframe v2 — plano global. Se face tracker não rodou, o plano
+    // não pode existir — isso precisa ser gritado, não escondido.
     let reframePlan = null;
-    try {
-      if (track?.tracks?.length) {
+    if (!track) {
+      pipelineStatus.reframe_plan = {
+        status: "skipped",
+        stage: "no_face_tracker",
+        error: "face tracker não produziu dados válidos; reframe não pôde iniciar",
+      };
+      app.log.warn({ event: "REFRAME_PLAN_SKIPPED", reason: "no_tracker" }, "reframe: pulado por falta de tracker");
+    } else if (!track.tracks?.length) {
+      pipelineStatus.reframe_plan = {
+        status: "skipped",
+        stage: "no_persistent_tracks",
+        error: "face tracker rodou mas não gerou tracks persistentes",
+      };
+      app.log.warn({ event: "REFRAME_PLAN_SKIPPED", reason: "no_persistent_tracks", frames: track.frames?.length ?? 0, detections: track.detections ?? null }, "reframe: sem tracks persistentes");
+    } else {
+      try {
         reframePlan = buildReframePlan({ track, turns: diar?.turns || [], log: app.log });
-      } else {
-        app.log.info("reframe: sem tracks persistentes, usando pipeline legado");
+        pipelineStatus.reframe_plan = {
+          status: "success",
+          samples: reframePlan?.cameraPath?.length ?? 0,
+          links: Object.keys(reframePlan?.speakerLinks ?? {}).length,
+        };
+      } catch (err) {
+        pipelineStatus.reframe_plan = { status: "failed", stage: "build", error: err?.message ?? String(err) };
+        app.log.error({ event: "REFRAME_PLAN_FAILED", error: err?.message }, "reframe plan crashou");
       }
-    } catch (err) {
-      app.log.warn({ err: err?.message }, "reframe plan crashou (segue no legado)");
     }
+
+    const reframeOk = pipelineStatus.reframe_plan.status === "success" && !!reframePlan;
+    app.log.info(
+      { event: "PIPELINE_STATUS", pipelineStatus, reframe_ok: reframeOk },
+      "pipeline status snapshot",
+    );
 
     // Sprint 1a — Modo Diagnóstico: emite artefatos sobre o pipeline atual.
     // NÃO modifica decisões. Só observa. Ver worker/DEBUG.md.
@@ -1208,6 +1335,7 @@ async function processJob(job) {
           turns: diar?.turns || [],
           speakers: diar?.speakers || [],
           reframePlan,
+          pipelineStatus,
           clipStart: start,
           clipEnd: end,
           duration,
@@ -1217,6 +1345,11 @@ async function processJob(job) {
         app.log.warn({ err: err?.message }, "debug artifacts: falha (segue normalmente)");
       }
     }
+
+    // Guarda pra usar no callback final.
+    job.__pipelineStatus = pipelineStatus;
+    job.__reframeOk = reframeOk;
+
 
     // 3. Reframe DINÂMICO por cena: cada cena do scene_plan vira um subclip
     // com layout/foco/zoom próprio, depois concatenamos. Sem plano, gera uma
@@ -1449,6 +1582,9 @@ async function processJob(job) {
       progress: 100,
       output_path: edl.output.path,
       worker_id: WORKER_ID,
+      reframe_status: job.__reframeOk ? "success" : "failed",
+      render_status: job.__reframeOk ? "completed" : "completed_with_reframe_fallback",
+      pipeline_status: job.__pipelineStatus ?? null,
     });
   } catch (err) {
     app.log.error({ err, job_id }, "job falhou");

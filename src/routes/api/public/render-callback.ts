@@ -11,6 +11,10 @@ const Payload = z.object({
   thumbnail_url: z.string().url().optional(),
   worker_id: z.string().optional(),
   error_message: z.string().optional(),
+  // Sprint 1a — sinal explícito de que o reframe rodou ou caiu em fallback.
+  reframe_status: z.enum(["success", "failed", "skipped"]).optional(),
+  render_status: z.enum(["completed", "completed_with_reframe_fallback"]).optional(),
+  pipeline_status: z.unknown().optional(),
 });
 
 function safeEqualHex(a: string, b: string) {

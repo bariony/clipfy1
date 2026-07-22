@@ -289,6 +289,26 @@ async function ffprobeDuration(file) {
   });
 }
 
+async function ffprobeDims(file) {
+  return new Promise((resolve) => {
+    const p = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x",
+      file,
+    ]);
+    let out = "";
+    p.stdout.on("data", (d) => (out += d.toString()));
+    p.on("close", () => {
+      const [w, h] = out.trim().split("x").map((n) => parseInt(n, 10));
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) resolve({ w, h });
+      else resolve(null);
+    });
+  });
+}
+
+
 function normalizeWords(words, offset = 0) {
   return (words ?? [])
     .map((w) => ({
@@ -1370,7 +1390,25 @@ async function processJob(job) {
     if (splitWindows.length) {
       app.log.info({ windows: splitWindows.map((w) => ({ t0: +w.t0.toFixed(2), t1: +w.t1.toFixed(2) })) }, "split-screen nativo detectado no material original");
     }
-    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false, plan: reframePlan };
+
+    // Detecta se o material FONTE já é vertical (~9:16 ou mais estreito).
+    // Quando o usuário sobe um reels/short, qualquer reframe/normalize corta
+    // as pessoas. Nesse caso, passamos direto: só escala + pad pro output.
+    const srcDims = await ffprobeDims(cutFile).catch(() => null);
+    const srcAspect = srcDims ? srcDims.w / srcDims.h : null;
+    // outAspect não é usado atualmente — passthrough vale para qualquer vertical
+    const sourceIsVertical =
+      aw === 1080 && ah === 1920 && srcAspect != null && srcAspect <= 0.75;
+    const passthroughVertical = sourceIsVertical; // qualquer vertical: passa direto com pad
+    if (sourceIsVertical) {
+      app.log.info(
+        { src: srcDims, srcAspect: +srcAspect.toFixed(3), passthrough: passthroughVertical },
+        "fonte já é vertical — desativando reframe/zoom para preservar o enquadramento original",
+      );
+    }
+
+    const sceneCtx = { track, cluster, diar, splitWindows, totalScenes: 1, multiCount: 0, lastWasMulti: false, plan: reframePlan, passthroughVertical, sourceIsVertical };
+
 
 
     let plannedScenes = Array.isArray(edl.scene_plan?.scenes) ? edl.scene_plan.scenes : [];
@@ -1420,11 +1458,22 @@ async function processJob(job) {
         "-r", "30", "-pix_fmt", "yuv420p",
       ];
 
+      // Passthrough vertical: fonte já é 9:16, só escala + pad. Sem crop, sem zoom.
+      if (sceneCtx.passthroughVertical) {
+        const seg = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
+        const dur = Math.max(0.15, t1 - t0);
+        const vf = `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+        await sh("ffmpeg", ["-y", "-ss", t0.toFixed(3), "-i", cutFile, "-t", dur.toFixed(3), "-vf", vf, ...encArgs, seg]);
+        sceneFiles.push(seg);
+        continue;
+      }
+
       // Plan-driven render (auto-reframe v2) — só para 9:16 e quando o plano existe
       // e a cena não cai em split-screen nativo (esse caminho preserva a composição).
       const useNativeSplit = aw === 1080 && ah === 1920 && sceneIsNativeSplit(sceneCtx.splitWindows, t0, t1);
       let planned = false;
-      if (reframePlan && aw === 1080 && ah === 1920 && !useNativeSplit) {
+      if (reframePlan && aw === 1080 && ah === 1920 && !useNativeSplit && !sceneCtx.sourceIsVertical) {
+
         try {
           const samples = reframePlan.sliceRange(t0, t1).filter((s) => s.cam);
           if (samples.length >= 2) {

@@ -1128,9 +1128,9 @@ function buildSceneFilter(scene, i, aw, ah, speakerMap, ctx) {
   const distinctEnough = Math.abs(primary.cx - secondary.cx) >= 1920 * 0.26;
   const hasRealSecondary = Boolean(secondaryFace && distinctEnough);
   const multiRequested = ["stack", "split", "pip", "quad"].includes(requestedLayout);
-  const maxMulti = Math.max(1, Math.floor((ctx?.totalScenes ?? 1) * 0.25));
+  const maxMulti = Math.max(2, Math.floor((ctx?.totalScenes ?? 1) * 0.6));
   const multiBudgetLeft = (ctx?.multiCount ?? 0) < maxMulti;
-  const allowMultiNow = multiRequested && hasRealSecondary && multiBudgetLeft && !ctx?.lastWasMulti && scene.dur >= 2.2;
+  const allowMultiNow = multiRequested && hasRealSecondary && multiBudgetLeft && scene.dur >= 1.6;
   let layout = requestedLayout;
 
   // Se não existe segunda pessoa visualmente distinta, não divide a tela.
@@ -1458,8 +1458,11 @@ async function processJob(job) {
         "-r", "30", "-pix_fmt", "yuv420p",
       ];
 
-      // Passthrough vertical: fonte já é 9:16, só escala + pad. Sem crop, sem zoom.
-      if (sceneCtx.passthroughVertical) {
+      // Passthrough vertical: fonte já é 9:16 E cena pede full. Sem crop, sem zoom.
+      // Cenas com layout dividido (stack/split/pip/quad) continuam passando pelo
+      // buildSceneFilter, que já suporta 1080x1920 e gera composições reais.
+      const wantsMulti = ["stack", "split", "pip", "quad"].includes(String(sc?.layout || "full"));
+      if (sceneCtx.passthroughVertical && !wantsMulti) {
         const seg = path.join(jobDir, `scene-${String(i).padStart(3, "0")}.mp4`);
         const dur = Math.max(0.15, t1 - t0);
         const vf = `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;

@@ -101,30 +101,35 @@ function coerceScenePlan(
     .sort((a, b) => a.t - b.t);
   if (scenes.length === 0) return null;
 
-  // Pós-processamento conservador: a IA pode exagerar em split/stack/quad.
-  // Divisão é exceção; nunca em sequência; máximo ~25% das cenas.
+  // Pós-processamento: permite edição dinâmica de verdade. Split/stack/pip/quad
+  // são bem-vindos quando há segunda pessoa distinta; ainda bloqueamos
+  // sequências longas do MESMO layout dividido para não virar poluição visual.
   const multiLayouts = new Set<SceneStep["layout"]>(["split", "stack", "pip", "quad"]);
-  const maxMulti = Math.max(1, Math.floor(scenes.length * 0.25));
+  const maxMulti = Math.max(2, Math.floor(scenes.length * 0.6));
   let multiCount = 0;
-  let previousWasMulti = false;
+  let sameMultiStreak = 0;
+  let lastLayout: SceneStep["layout"] | null = null;
   for (const sc of scenes) {
     const isMulti = multiLayouts.has(sc.layout);
     if (!isMulti) {
-      previousWasMulti = false;
+      sameMultiStreak = 0;
+      lastLayout = sc.layout;
       continue;
     }
     const hasSecond = Boolean(sc.right || sc.bottom || sc.inset || (Array.isArray(sc.grid) && sc.grid.length > 1));
-    if (previousWasMulti || multiCount >= maxMulti || !hasSecond) {
+    if (!hasSecond || multiCount >= maxMulti || (lastLayout === sc.layout && sameMultiStreak >= 2)) {
       sc.layout = "full";
       sc.right = undefined;
       sc.bottom = undefined;
       sc.inset = undefined;
       sc.grid = undefined;
-      previousWasMulti = false;
+      sameMultiStreak = 0;
+      lastLayout = "full";
       continue;
     }
     multiCount++;
-    previousWasMulti = true;
+    sameMultiStreak = lastLayout === sc.layout ? sameMultiStreak + 1 : 1;
+    lastLayout = sc.layout;
   }
 
   const speakers: Speaker[] = (obj.speakers ?? [])
@@ -165,21 +170,20 @@ async function generateScenePlanForClip(params: {
   // Sem transcrição: retorna fallback direto
   if (!timeline) return fallbackScenePlan(duration);
 
-  const system = `Você é o diretor de edição do Clipfy. Analisa um corte curto (${duration.toFixed(1)}s) e planeja uma edição dinâmica ponta-a-ponta como um editor profissional. Regra central: NÃO faça layout dividido por variedade. Se não houver motivo claro, use full.
+  const system = `Você é o diretor de edição do Clipfy. Analisa um corte curto (${duration.toFixed(1)}s) e planeja uma edição DINÂMICA, chamativa e inteligente — como um editor de shorts profissional (Opus, Hormozi, podcast clips). O objetivo é prender o olho: alternar foco, mostrar reação, dividir tela quando dois falam ou reagem.
 
 REGRAS:
-- Infira falantes a partir do texto (mudanças de tom, "eu", "você", vocativos, perguntas/respostas). Rotule como A, B, C… se houver múltiplos.
-- Divida o corte em CENAS de 3-7 segundos, mas o layout padrão é sempre "full".
-- Layouts disponíveis: "full" (foco em 1), "split" (2 lado a lado), "stack" (2 empilhados, MELHOR para podcasts horizontais em 9:16), "pip" (1 grande + inset), "quad" (4), "broll" (voz + gráfico).
-- Use "stack", "split", "pip" ou "quad" SOMENTE quando o conteúdo pede mostrar reação/contraste real: duas pessoas falando ao mesmo tempo, pergunta/resposta muito clara, risada/reação de outra pessoa, confronto, grupo reagindo, ou uma ação visual envolvendo mais de uma pessoa.
-- NÃO use layout dividido em monólogo, explicação, frase curta, transição, ou só para "dar dinâmica".
-- Para diálogos/podcasts horizontais, se realmente precisar dividir, prefira "stack"; mas a maioria das cenas deve continuar "full" no falante/ação principal.
-- Se só há 1 falante detectado: use apenas "full". NÃO invente split, stack, pip ou quad.
-- Em uma cena dividida, os participantes devem ser semanticamente diferentes; nunca planeje duas janelas para o mesmo falante ou a mesma ação.
-- Limite layouts divididos a no máximo 25% das cenas. Nunca use layout dividido em cenas consecutivas.
-- Reaja aos beats com foco e zoom/full antes de dividir tela. Dividir é exceção, não padrão.
-- Cenas contíguas (a próxima t = t anterior + dur anterior). Última cena termina em duration.
-- Responda SOMENTE JSON válido no formato: {"speakers":[{"id":"A","label":"Host"}],"scenes":[{"t":0,"dur":3.2,"layout":"full","focus":"A","beat":"intro"}]}`;
+- Infira falantes a partir do texto (mudanças de tom, "eu", "você", vocativos, perguntas/respostas, risadas). Rotule A, B, C…
+- Divida em CENAS curtas de 2-5 segundos. Cenas curtas = ritmo.
+- Layouts: "full" (1 pessoa), "split" (2 lado a lado), "stack" (2 empilhados — MELHOR para podcast em 9:16), "pip" (grande + inset), "quad" (4), "broll".
+- QUANDO O FALANTE MUDA: troque o foco IMEDIATAMENTE na próxima cena (nova cena com focus = novo falante). Não fique preso na pessoa anterior.
+- QUANDO DOIS FALAM JUNTOS, HÁ REAÇÃO/RISADA, PERGUNTA-RESPOSTA RÁPIDA, OU CONFRONTO: use "stack" (preferido em 9:16) ou "split", com left/right (ou top/bottom) preenchidos com IDs DIFERENTES de falantes.
+- Use "pip" quando alguém fala e a reação do outro importa. Use "quad" só se houver 4 pessoas ativas.
+- Em uma cena dividida: os dois IDs precisam ser semanticamente DIFERENTES; nunca duas janelas do mesmo falante.
+- Se só há 1 falante detectado no corte inteiro: use apenas "full" e alterne o zoom sutilmente entre cenas (mas ainda alterne cenas curtas).
+- Evite 3+ cenas divididas iguais em sequência (varie stack → full → split → full…).
+- Cenas contíguas (próxima t = t anterior + dur anterior). Última cena termina em duration.
+- Responda SOMENTE JSON válido: {"speakers":[{"id":"A","label":"Host"},{"id":"B","label":"Convidado"}],"scenes":[{"t":0,"dur":2.4,"layout":"full","focus":"A","beat":"pergunta"},{"t":2.4,"dur":3.1,"layout":"stack","top":"A","bottom":"B","beat":"reacao"}]}`;
 
   const user = `Corte de ${duration.toFixed(1)}s (timestamps relativos ao início do corte).
 Transcrição:
@@ -197,7 +201,7 @@ Gere o plano de cenas (JSON puro).`;
       },
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
-        temperature: 0.4,
+        temperature: 0.7,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },

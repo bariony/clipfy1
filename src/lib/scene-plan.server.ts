@@ -101,30 +101,35 @@ function coerceScenePlan(
     .sort((a, b) => a.t - b.t);
   if (scenes.length === 0) return null;
 
-  // Pós-processamento conservador: a IA pode exagerar em split/stack/quad.
-  // Divisão é exceção; nunca em sequência; máximo ~25% das cenas.
+  // Pós-processamento: permite edição dinâmica de verdade. Split/stack/pip/quad
+  // são bem-vindos quando há segunda pessoa distinta; ainda bloqueamos
+  // sequências longas do MESMO layout dividido para não virar poluição visual.
   const multiLayouts = new Set<SceneStep["layout"]>(["split", "stack", "pip", "quad"]);
-  const maxMulti = Math.max(1, Math.floor(scenes.length * 0.25));
+  const maxMulti = Math.max(2, Math.floor(scenes.length * 0.6));
   let multiCount = 0;
-  let previousWasMulti = false;
+  let sameMultiStreak = 0;
+  let lastLayout: SceneStep["layout"] | null = null;
   for (const sc of scenes) {
     const isMulti = multiLayouts.has(sc.layout);
     if (!isMulti) {
-      previousWasMulti = false;
+      sameMultiStreak = 0;
+      lastLayout = sc.layout;
       continue;
     }
     const hasSecond = Boolean(sc.right || sc.bottom || sc.inset || (Array.isArray(sc.grid) && sc.grid.length > 1));
-    if (previousWasMulti || multiCount >= maxMulti || !hasSecond) {
+    if (!hasSecond || multiCount >= maxMulti || (lastLayout === sc.layout && sameMultiStreak >= 2)) {
       sc.layout = "full";
       sc.right = undefined;
       sc.bottom = undefined;
       sc.inset = undefined;
       sc.grid = undefined;
-      previousWasMulti = false;
+      sameMultiStreak = 0;
+      lastLayout = "full";
       continue;
     }
     multiCount++;
-    previousWasMulti = true;
+    sameMultiStreak = lastLayout === sc.layout ? sameMultiStreak + 1 : 1;
+    lastLayout = sc.layout;
   }
 
   const speakers: Speaker[] = (obj.speakers ?? [])

@@ -72,7 +72,12 @@ export function ClipCard({
   }, [renderJob, superseded, stuck, ready, autoRender]);
 
   const progress = Math.max(0, Math.min(100, renderJob?.progress ?? 0));
-  const errorMsg = superseded ? null : renderJob?.error_message ?? null;
+  const stuckErrorMsg = stuck
+    ? renderJob?.status === "queued"
+      ? "O renderizador não pegou este job. Verifique se a URL do worker aponta para o serviço render-worker, não para o painel do EasyPanel."
+      : "O renderizador parou de atualizar este job. Tente novamente após confirmar que o worker está online."
+    : null;
+  const errorMsg = superseded ? null : renderJob?.error_message ?? stuckErrorMsg;
   const statusLabel = failed
     ? "Falha na renderização"
     : renderJob?.status === "processing"

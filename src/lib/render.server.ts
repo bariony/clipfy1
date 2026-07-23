@@ -151,9 +151,22 @@ export async function enqueueRenderForClip({
       },
       body: JSON.stringify({ job_id: job.id, edl }),
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      const message = `Worker recusou o job (${res.status})${detail ? `: ${detail.slice(0, 180)}` : ""}`;
+    const detail = await res.text().catch(() => "");
+    let workerAccepted = false;
+    try {
+      const parsed = JSON.parse(detail) as { queued?: unknown };
+      workerAccepted = parsed.queued === true;
+    } catch {
+      workerAccepted = false;
+    }
+
+    if (!res.ok || !workerAccepted) {
+      const looksLikeHtml = /^\s*(<!doctype html|<html)/i.test(detail);
+      const message = !res.ok
+        ? `Worker recusou o job (${res.status})${detail ? `: ${detail.slice(0, 180)}` : ""}`
+        : looksLikeHtml
+          ? "RENDER_WORKER_URL está apontando para o painel do EasyPanel, não para o serviço render-worker. Configure a URL pública/domínio do worker e tente novamente."
+          : `Worker respondeu sem confirmar fila${detail ? `: ${detail.slice(0, 180)}` : ""}`;
       await supabase
         .from("render_jobs")
         .update({ status: "failed", error_message: message, completed_at: new Date().toISOString() })
